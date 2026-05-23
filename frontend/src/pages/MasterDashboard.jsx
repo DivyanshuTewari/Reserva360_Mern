@@ -2,7 +2,7 @@ import React, { useState, useEffect, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
-import { LogOut, Plus, List, Hotel as HotelIcon, MapPin, CalendarDays, KeyRound, Phone, AtSign, Edit2, X, ShieldQuestion, Key, Search, ArrowUpDown, Users, ChevronDown, Trash2, AlertTriangle } from 'lucide-react';
+import { LogOut, Plus, List, Hotel as HotelIcon, MapPin, CalendarDays, KeyRound, Phone, AtSign, Edit2, X, ShieldQuestion, Key, Search, ArrowUpDown, Users, ChevronDown, Trash2, AlertTriangle, QrCode, CheckCircle2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const MasterDashboard = () => {
@@ -28,6 +28,8 @@ const MasterDashboard = () => {
   const [resettingHotel, setResettingHotel] = useState(null);
   const [revokingHotel, setRevokingHotel] = useState(null);
   const [revokeConfirmName, setRevokeConfirmName] = useState('');
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentDetails, setPaymentDetails] = useState(null);
   const [editFormData, setEditFormData] = useState({
     name: '',
     address: '',
@@ -76,11 +78,37 @@ const MasterDashboard = () => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleCreateHotel = async (e) => {
+  const handleCreateHotel = (e) => {
     e.preventDefault();
+    
+    // Calculate payment details
+    const paidMonths = parseInt(formData.subscriptionMonths) || 12;
+    const amount = paidMonths * 2000;
+    const freeMonths = Math.floor(paidMonths / 6);
+    const totalMonths = paidMonths + freeMonths;
+
+    setPaymentDetails({
+      paidMonths,
+      amount,
+      freeMonths,
+      totalMonths
+    });
+    
+    setShowPaymentModal(true);
+  };
+
+  const handlePaymentGranted = async () => {
     try {
-      await api.post('/master/create-hotel', formData);
+      // Create a copy of formData and inject the new total months
+      const finalData = {
+        ...formData,
+        subscriptionMonths: paymentDetails.totalMonths
+      };
+
+      await api.post('/master/create-hotel', finalData);
       toast.success('Property & Admin provisioned successfully!');
+      
+      // Reset form
       setFormData({
         hotelName: '',
         address: '',
@@ -94,9 +122,11 @@ const MasterDashboard = () => {
         securityQuestion: '',
         securityAnswer: ''
       });
+      setShowPaymentModal(false);
       fetchHotels();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Error creating property');
+      setShowPaymentModal(false);
     }
   };
 
@@ -335,10 +365,10 @@ const MasterDashboard = () => {
                       <input type="text" name="adminName" value={formData.adminName} onChange={handleChange} required className="w-full px-5 py-3.5 bg-black/50 text-white rounded-xl border border-white/10 focus:border-emerald-500 focus:bg-black/80 focus:ring-1 focus:ring-emerald-500 outline-none transition-all placeholder:text-gray-600 font-medium" placeholder="Admin Full Name" />
                     </div>
                     <div>
-                      <input type="email" name="adminEmail" value={formData.adminEmail} onChange={handleChange} required className="w-full px-5 py-3.5 bg-black/50 text-white rounded-xl border border-white/10 focus:border-emerald-500 focus:bg-black/80 focus:ring-1 focus:ring-emerald-500 outline-none transition-all placeholder:text-gray-600 font-medium" placeholder="Email Address" />
+                      <input type="email" name="adminEmail" value={formData.adminEmail} onChange={handleChange} required autoComplete="off" className="w-full px-5 py-3.5 bg-black/50 text-white rounded-xl border border-white/10 focus:border-emerald-500 focus:bg-black/80 focus:ring-1 focus:ring-emerald-500 outline-none transition-all placeholder:text-gray-600 font-medium" placeholder="Email Address" />
                     </div>
                     <div>
-                      <input type="password" name="adminPassword" value={formData.adminPassword} onChange={handleChange} required className="w-full px-5 py-3.5 bg-black/50 text-white rounded-xl border border-white/10 focus:border-emerald-500 focus:bg-black/80 focus:ring-1 focus:ring-emerald-500 outline-none transition-all placeholder:text-gray-600 font-medium" placeholder="Temporary Password" />
+                      <input type="password" name="adminPassword" value={formData.adminPassword} onChange={handleChange} required autoComplete="new-password" className="w-full px-5 py-3.5 bg-black/50 text-white rounded-xl border border-white/10 focus:border-emerald-500 focus:bg-black/80 focus:ring-1 focus:ring-emerald-500 outline-none transition-all placeholder:text-gray-600 font-medium" placeholder="Temporary Password" />
                     </div>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
@@ -689,6 +719,53 @@ const MasterDashboard = () => {
                 <Trash2 size={18} className="mr-2" /> Permanently Revoke Access
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Payment Confirmation Modal */}
+      {showPaymentModal && paymentDetails && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/90 backdrop-blur-md" onClick={() => setShowPaymentModal(false)}></div>
+          <div className="relative bg-[#0f1115] border border-blue-500/30 rounded-3xl p-6 sm:p-10 max-w-md w-full shadow-[0_0_80px_rgba(37,99,235,0.2)] max-h-[90vh] overflow-y-auto custom-scrollbar flex flex-col items-center text-center">
+            <button onClick={() => setShowPaymentModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors">
+              <X size={24} />
+            </button>
+            
+            <div className="w-16 h-16 bg-blue-600/20 rounded-full flex items-center justify-center mb-4 border border-blue-500/30">
+              <QrCode className="text-blue-500" size={32} />
+            </div>
+            
+            <h2 className="text-3xl font-black text-white tracking-tight mb-2">₹{paymentDetails.amount.toLocaleString('en-IN')}</h2>
+            <p className="text-blue-400 font-semibold uppercase tracking-widest text-xs mb-6">Total Payable Amount</p>
+
+            <div className="w-full bg-white p-4 rounded-2xl mb-6 shadow-inner flex justify-center">
+              <img src="/payment-qr.png" alt="Payment QR Code" className="max-w-[200px] w-full rounded-xl mix-blend-multiply" />
+            </div>
+
+            <div className="w-full bg-blue-500/5 border border-blue-500/10 rounded-xl p-4 mb-8 space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-gray-400 text-sm">Base Duration</span>
+                <span className="text-white font-bold">{paymentDetails.paidMonths} Months</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-emerald-400 text-sm">Complimentary</span>
+                <span className="text-emerald-400 font-bold">+{paymentDetails.freeMonths} Months</span>
+              </div>
+              <div className="h-px w-full bg-white/5 my-2"></div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-300 font-semibold">Total Validity</span>
+                <span className="text-blue-400 font-black text-lg">{paymentDetails.totalMonths} Months</span>
+              </div>
+            </div>
+
+            <button 
+              onClick={handlePaymentGranted} 
+              className="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-black py-4 rounded-xl transition-all flex items-center justify-center shadow-[0_0_30px_rgba(16,185,129,0.3)] active:scale-95"
+            >
+              <CheckCircle2 size={20} className="mr-2" /> PAYMENT GRANTED
+            </button>
+            <p className="text-gray-500 text-xs mt-4">Clicking granted will immediately provision the database.</p>
           </div>
         </div>
       )}
