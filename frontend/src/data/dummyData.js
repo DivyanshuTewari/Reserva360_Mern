@@ -1,41 +1,9 @@
 export const stats = {
-  // Core Daily
-  todayBookings: 24,
-  todayBookingsGrowth: "+12%",
-  todayEarnings: 4500,
-  todayEarningsGrowth: "+8%",
-  todayCheckIns: 18,
-  todayCheckOuts: 15,
-  
-  // Core Month
-  monthBookings: 342,
-  monthEarnings: 124500,
-  
-  // POS Daily
-  todayPOSOrders: 156,
-  todayPOSEarnings: 2340,
-  todayPOSRoomTransfers: 45,
-  todayComplimentaryPOS: 12,
-  
-  // POS Month
-  monthPOSOrders: 4200,
-  monthPOSEarnings: 63000,
+  totalBookings: 12,
+  upcomingStays: 3,
+  savedProperties: 8,
+  pendingPayments: 1,
 };
-
-export const todayTasks = [
-  { id: 'TSK-001', title: 'Room 204 VIP Setup', status: 'pending', time: '10:00 AM' },
-  { id: 'TSK-002', title: 'Pool Maintenance', status: 'completed', time: '07:00 AM' },
-  { id: 'TSK-003', title: 'Lobby Deep Clean', status: 'in-progress', time: '11:30 AM' },
-  { id: 'TSK-004', title: 'Review POS Inventory', status: 'pending', time: '02:00 PM' },
-];
-
-export const todayBookingsTable = [
-  { id: 'BKG-7721', source: 'Booking.com', guest: 'Alice Johnson', checkIn: '2024-05-23', checkOut: '2024-05-26', room: 'Deluxe Suite', status: 'Confirmed' },
-  { id: 'BKG-7722', source: 'Direct Web', guest: 'Michael Smith', checkIn: '2024-05-23', checkOut: '2024-05-25', room: 'Ocean View', status: 'Checked In' },
-  { id: 'BKG-7723', source: 'Expedia', guest: 'Emma Brown', checkIn: '2024-05-23', checkOut: '2024-05-28', room: 'Standard Double', status: 'Pending' },
-  { id: 'BKG-7724', source: 'Walk-In', guest: 'David Wilson', checkIn: '2024-05-23', checkOut: '2024-05-24', room: 'Standard Single', status: 'Checked In' },
-  { id: 'BKG-7725', source: 'Airbnb', guest: 'Sophia Martinez', checkIn: '2024-05-23', checkOut: '2024-05-27', room: 'Penthouse', status: 'Confirmed' },
-];
 
 export const recentBookings = [
   {
@@ -55,6 +23,15 @@ export const recentBookings = [
     checkOut: "2024-07-15",
     status: "Pending",
     paymentStatus: "Pending",
+  },
+  {
+    id: "BKG-003",
+    propertyImage: "https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80",
+    propertyName: "Mountain Retreat",
+    checkIn: "2024-05-01",
+    checkOut: "2024-05-05",
+    status: "Completed",
+    paymentStatus: "Paid",
   },
 ];
 
@@ -77,6 +54,15 @@ export const recommendedProperties = [
     pricePerNight: 400,
     location: "Maldives",
   },
+  {
+    id: "PROP-003",
+    image: "https://images.unsplash.com/photo-1551882547-ff40c0d58d48?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80",
+    name: "Cozy Cabin Woods",
+    rating: 4.6,
+    reviews: 56,
+    pricePerNight: 120,
+    location: "Aspen, CO",
+  },
 ];
 
 export const notifications = [
@@ -87,6 +73,22 @@ export const notifications = [
     date: "2 hours ago",
     read: false,
     type: "booking",
+  },
+  {
+    id: "NOTIF-002",
+    title: "Payment Reminder",
+    message: "You have a pending payment of $500 for Oceanview Resort.",
+    date: "1 day ago",
+    read: false,
+    type: "payment",
+  },
+  {
+    id: "NOTIF-003",
+    title: "Review Request",
+    message: "How was your stay at Mountain Retreat? Leave a review!",
+    date: "3 days ago",
+    read: true,
+    type: "activity",
   },
 ];
 

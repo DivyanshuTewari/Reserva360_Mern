@@ -1,6 +1,5 @@
-import React, { useState, useContext } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
-import { AuthContext } from '../../context/AuthContext';
+import React, { useState } from 'react';
+import { NavLink } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   CalendarCheck, 
@@ -9,32 +8,18 @@ import {
   Settings, 
   LogOut,
   Menu,
-  X,
-  Home,
-  ShoppingBag,
-  CheckSquare,
-  BarChart3
+  X
 } from 'lucide-react';
 
 const Sidebar = () => {
   const [isOpen, setIsOpen] = useState(false);
-  const { logout } = useContext(AuthContext);
-  const navigate = useNavigate();
-
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
 
   const navItems = [
     { name: 'Dashboard', path: '/staff', icon: LayoutDashboard },
-    { name: 'Bookings', path: '/staff/bookings', icon: CalendarCheck },
-    { name: 'Rooms', path: '/staff/rooms', icon: Home },
-    { name: 'POS Services', path: '/staff/pos', icon: ShoppingBag },
-    { name: 'Tasks', path: '/staff/tasks', icon: CheckSquare },
-    { name: 'Reports', path: '/staff/reports', icon: BarChart3 },
+    { name: 'My Bookings', path: '/staff/bookings', icon: CalendarCheck },
+    { name: 'Saved Properties', path: '/staff/saved', icon: Heart },
     { name: 'Notifications', path: '/staff/notifications', icon: Bell },
-    { name: 'Settings', path: '/staff/settings', icon: Settings },
+    { name: 'Profile Settings', path: '/staff/settings', icon: Settings },
   ];
 
   return (
@@ -91,7 +76,7 @@ const Sidebar = () => {
         </nav>
 
         <div className="p-4 border-t border-slate-800">
-          <button onClick={handleLogout} className="flex items-center gap-4 px-4 py-3 w-full rounded-2xl hover:bg-red-500/10 hover:text-red-400 transition-all duration-200 font-medium text-slate-400">
+          <button className="flex items-center gap-4 px-4 py-3 w-full rounded-2xl hover:bg-red-500/10 hover:text-red-400 transition-all duration-200 font-medium text-slate-400">
             <LogOut size={20} />
             Logout
           </button>

@@ -1,10 +1,7 @@
-import React, { useContext } from 'react';
+import React from 'react';
 import { Search, Bell } from 'lucide-react';
-import { AuthContext } from '../../context/AuthContext';
 
 const Topbar = () => {
-  const { user } = useContext(AuthContext);
-
   return (
     <header className="sticky top-0 z-30 flex items-center justify-between px-8 py-4 bg-white/80 backdrop-blur-xl border-b border-slate-200/50">
       <div className="flex items-center gap-4 flex-1">
@@ -28,8 +25,8 @@ const Topbar = () => {
 
         <div className="flex items-center gap-3 border-l border-slate-200 pl-6">
           <div className="hidden md:block text-right">
-            <p className="text-sm font-bold text-slate-800">{user?.name || user?.fullName || 'User'}</p>
-            <p className="text-xs text-slate-500 capitalize">{user?.role || 'Staff'}</p>
+            <p className="text-sm font-bold text-slate-800">John Doe</p>
+            <p className="text-xs text-slate-500">Premium Member</p>
           </div>
           <img
             className="h-10 w-10 rounded-full object-cover border-2 border-white shadow-sm"
