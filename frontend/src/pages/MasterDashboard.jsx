@@ -2,7 +2,7 @@ import React, { useState, useEffect, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
-import { LogOut, Plus, List, Hotel as HotelIcon, MapPin, CalendarDays, KeyRound, Phone, AtSign, Edit2, X, ShieldQuestion, Key, Search, ArrowUpDown, Users, ChevronDown, Trash2, AlertTriangle, QrCode, CheckCircle2, Download, DollarSign, Activity, AlertCircle } from 'lucide-react';
+import { LogOut, Plus, List, Hotel as HotelIcon, MapPin, CalendarDays, KeyRound, Phone, AtSign, Edit2, X, ShieldQuestion, Key, Search, ArrowUpDown, Users, ChevronDown, Trash2, AlertTriangle, QrCode, CheckCircle2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const MasterDashboard = () => {
@@ -232,71 +232,6 @@ const MasterDashboard = () => {
     }
   });
 
-  const now = new Date();
-  const currentMonth = now.getMonth();
-  const currentYear = now.getFullYear();
-
-  const analytics = hotels.reduce((acc, hotel) => {
-    const totalMonths = hotel.subscriptionMonths || 12;
-    const paidMonths = totalMonths - Math.floor(totalMonths / 7);
-    acc.totalRevenue += paidMonths * 2000;
-
-    const endDate = new Date(hotel.subscriptionEndDate || 0);
-    if (endDate > now) {
-      acc.activeProperties += 1;
-    } else {
-      acc.expiredProperties += 1;
-    }
-
-    if (endDate.getMonth() === currentMonth && endDate.getFullYear() === currentYear) {
-      acc.expiringThisMonth += 1;
-    }
-
-    return acc;
-  }, {
-    totalRevenue: 0,
-    activeProperties: 0,
-    expiredProperties: 0,
-    expiringThisMonth: 0
-  });
-
-  const exportToCSV = () => {
-    if (filteredAndSortedHotels.length === 0) {
-      toast.error('No clients to export');
-      return;
-    }
-
-    const headers = ['Property Name', 'Address', 'Admin Name', 'Admin Email', 'Admin Phone', 'Expiry Date', 'Subscription Months', 'Status'];
-    
-    const csvContent = [
-      headers.join(','),
-      ...filteredAndSortedHotels.map(hotel => {
-        const isExpired = new Date(hotel.subscriptionEndDate) <= new Date();
-        const status = isExpired ? 'EXPIRED' : 'ACTIVE';
-        return [
-          `"${hotel.name || ''}"`,
-          `"${hotel.address || ''}"`,
-          `"${hotel.adminDetails?.name || ''}"`,
-          `"${hotel.adminDetails?.email || ''}"`,
-          `"${hotel.adminPhone || ''}"`,
-          `"${hotel.subscriptionEndDate ? new Date(hotel.subscriptionEndDate).toLocaleDateString() : ''}"`,
-          `"${hotel.subscriptionMonths || 12}"`,
-          `"${status}"`
-        ].join(',');
-      })
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `Reserva360_Clients_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    toast.success('Report exported successfully');
-  };
-
   return (
     <div className="min-h-screen font-sans relative overflow-hidden bg-[#0a0a0b]">
       {/* Background Image with Deep Overlay */}
@@ -355,46 +290,6 @@ const MasterDashboard = () => {
             <div className="mb-14 max-w-2xl">
               <h1 className="text-5xl font-extrabold text-white tracking-tight mb-4">Enterprise Deployment</h1>
               <p className="text-xl text-gray-400 font-light leading-relaxed">Launch and oversee premium hospitality properties globally from your master command center.</p>
-            </div>
-
-            {/* KPI Analytics Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
-              <div className="bg-[#13151a]/80 backdrop-blur-xl border border-white/5 rounded-2xl p-6 shadow-xl flex items-center justify-between">
-                <div>
-                  <p className="text-gray-400 text-sm font-medium uppercase tracking-wider mb-1">Total Revenue</p>
-                  <h3 className="text-3xl font-black text-white">${analytics.totalRevenue.toLocaleString()}</h3>
-                </div>
-                <div className="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center border border-emerald-500/30">
-                  <DollarSign className="text-emerald-400" size={24} />
-                </div>
-              </div>
-              <div className="bg-[#13151a]/80 backdrop-blur-xl border border-white/5 rounded-2xl p-6 shadow-xl flex items-center justify-between">
-                <div>
-                  <p className="text-gray-400 text-sm font-medium uppercase tracking-wider mb-1">Active Properties</p>
-                  <h3 className="text-3xl font-black text-white">{analytics.activeProperties}</h3>
-                </div>
-                <div className="w-12 h-12 rounded-xl bg-blue-500/20 flex items-center justify-center border border-blue-500/30">
-                  <Activity className="text-blue-400" size={24} />
-                </div>
-              </div>
-              <div className="bg-[#13151a]/80 backdrop-blur-xl border border-white/5 rounded-2xl p-6 shadow-xl flex items-center justify-between">
-                <div>
-                  <p className="text-gray-400 text-sm font-medium uppercase tracking-wider mb-1">Expired</p>
-                  <h3 className="text-3xl font-black text-white">{analytics.expiredProperties}</h3>
-                </div>
-                <div className="w-12 h-12 rounded-xl bg-red-500/20 flex items-center justify-center border border-red-500/30">
-                  <AlertCircle className="text-red-400" size={24} />
-                </div>
-              </div>
-              <div className="bg-[#13151a]/80 backdrop-blur-xl border border-white/5 rounded-2xl p-6 shadow-xl flex items-center justify-between">
-                <div>
-                  <p className="text-gray-400 text-sm font-medium uppercase tracking-wider mb-1">Expiring This Month</p>
-                  <h3 className="text-3xl font-black text-white">{analytics.expiringThisMonth}</h3>
-                </div>
-                <div className="w-12 h-12 rounded-xl bg-amber-500/20 flex items-center justify-center border border-amber-500/30">
-                  <CalendarDays className="text-amber-400" size={24} />
-                </div>
-              </div>
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-10">
@@ -602,14 +497,7 @@ const MasterDashboard = () => {
                 <p className="text-gray-400">Search and filter through all provisioned properties.</p>
               </div>
               
-              <div className="flex flex-col sm:flex-row gap-4 items-center">
-                <button
-                  onClick={exportToCSV}
-                  className="px-5 py-3 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border border-emerald-500/30 rounded-xl font-bold flex items-center justify-center transition-all shadow-lg w-full sm:w-auto h-[46px]"
-                >
-                  <Download size={18} className="mr-2" /> Export Report
-                </button>
-
+              <div className="flex flex-col sm:flex-row gap-4">
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                     <Search className="h-5 w-5 text-gray-500" />
