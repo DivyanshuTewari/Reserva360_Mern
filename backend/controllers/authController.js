@@ -77,6 +77,10 @@ exports.login = async (req, res) => {
       return res.status(401).json({ message: 'Master must use secure login route' });
     }
 
+    if (user && user.hotelId && new Date(user.hotelId.subscriptionEndDate) < new Date()) {
+      return res.status(403).json({ message: 'Your subscription has expired. Please contact the master administrator.' });
+    }
+
     if (user && (await bcrypt.compare(password, user.password))) {
       res.json({
         _id: user._id,

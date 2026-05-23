@@ -24,19 +24,12 @@ const startSubscriptionCleaner = () => {
         return;
       }
 
-      console.log(`[Cron] Found ${expiredHotels.length} hotels to revoke. Cascading deletion started...`);
+      console.log(`[Cron] Found ${expiredHotels.length} hotels with expired subscriptions. They are now suspended (data kept intact).`);
 
       for (const hotel of expiredHotels) {
-        const hotelId = hotel._id;
-        
-        // Cascading delete for each expired hotel
-        await User.deleteMany({ hotelId });
-        await Room.deleteMany({ hotelId });
-        await RoomType.deleteMany({ hotelId });
-        await Booking.deleteMany({ hotelId });
-        await Hotel.findByIdAndDelete(hotelId);
-
-        console.log(`[Cron] Successfully revoked access and deleted data for hotel: ${hotel.name}`);
+        // Data is intentionally kept intact. 
+        // Authentication controllers automatically block login for these properties.
+        console.log(`[Cron] Hotel is suspended due to expiry: ${hotel.name}`);
       }
 
       console.log('[Cron] Subscription cleaner job completed.');

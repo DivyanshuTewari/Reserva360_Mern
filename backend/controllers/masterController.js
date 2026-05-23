@@ -161,3 +161,32 @@ exports.revokeHotelAccess = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+// @desc    Renew/Reactivate Hotel Subscription
+// @route   PUT /api/master/renew-hotel/:id
+// @access  Private/Master
+exports.renewHotel = async (req, res) => {
+  try {
+    const { additionalMonths } = req.body;
+    const hotel = await Hotel.findById(req.params.id);
+    if (!hotel) return res.status(404).json({ message: 'Hotel not found' });
+
+    const now = new Date();
+    let currentEnd = hotel.subscriptionEndDate ? new Date(hotel.subscriptionEndDate) : now;
+    
+    // If expired, start from today. If active, add to existing end date.
+    if (currentEnd < now) {
+      currentEnd = now;
+    }
+
+    currentEnd.setMonth(currentEnd.getMonth() + parseInt(additionalMonths));
+    
+    hotel.subscriptionEndDate = currentEnd;
+    hotel.subscriptionMonths = (hotel.subscriptionMonths || 0) + parseInt(additionalMonths);
+    await hotel.save();
+
+    res.json({ message: 'Hotel subscription renewed successfully', hotel });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};

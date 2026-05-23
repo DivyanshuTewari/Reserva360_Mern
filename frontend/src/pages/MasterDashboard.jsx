@@ -2,7 +2,7 @@ import React, { useState, useEffect, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
-import { LogOut, Plus, List, Hotel as HotelIcon, MapPin, CalendarDays, KeyRound, Phone, AtSign, Edit2, X, ShieldQuestion, Key, Search, ArrowUpDown, Users, ChevronDown, Trash2, AlertTriangle, QrCode, CheckCircle2, Download, DollarSign, Activity, AlertCircle } from 'lucide-react';
+import { LogOut, Plus, List, Hotel as HotelIcon, MapPin, CalendarDays, KeyRound, Phone, AtSign, Edit2, X, ShieldQuestion, Key, Search, ArrowUpDown, Users, ChevronDown, Trash2, AlertTriangle, QrCode, CheckCircle2, Download, DollarSign, Activity, AlertCircle, Zap, IndianRupee } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const MasterDashboard = () => {
@@ -30,6 +30,12 @@ const MasterDashboard = () => {
   const [revokeConfirmName, setRevokeConfirmName] = useState('');
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentDetails, setPaymentDetails] = useState(null);
+  
+  const [renewingHotel, setRenewingHotel] = useState(null);
+  const [renewMonths, setRenewMonths] = useState(12);
+  const [showRenewPaymentModal, setShowRenewPaymentModal] = useState(false);
+  const [renewPaymentDetails, setRenewPaymentDetails] = useState(null);
+  
   const [editFormData, setEditFormData] = useState({
     name: '',
     address: '',
@@ -164,6 +170,41 @@ const MasterDashboard = () => {
   const handleRevokeClose = () => {
     setRevokingHotel(null);
     setRevokeConfirmName('');
+  };
+
+  const handleRenewClick = (hotel) => {
+    setRenewingHotel(hotel);
+    setRenewMonths(12);
+  };
+
+  const handleRenewClose = () => {
+    setRenewingHotel(null);
+  };
+
+  const handleRenewProceed = (e) => {
+    e.preventDefault();
+    const paidMonths = parseInt(renewMonths) || 12;
+    const amount = paidMonths * 2000;
+    const freeMonths = Math.floor(paidMonths / 6);
+    const totalMonths = paidMonths + freeMonths;
+
+    setRenewPaymentDetails({ paidMonths, amount, freeMonths, totalMonths });
+    setShowRenewPaymentModal(true);
+  };
+
+  const handleRenewGranted = async () => {
+    try {
+      await api.put(`/master/renew-hotel/${renewingHotel._id}`, {
+        additionalMonths: renewPaymentDetails.totalMonths
+      });
+      toast.success('Subscription successfully renewed!');
+      setShowRenewPaymentModal(false);
+      setRenewingHotel(null);
+      fetchHotels();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to renew subscription');
+      setShowRenewPaymentModal(false);
+    }
   };
 
   const handleEditSubmit = async (e) => {
@@ -362,10 +403,10 @@ const MasterDashboard = () => {
               <div className="bg-[#13151a]/80 backdrop-blur-xl border border-white/5 rounded-2xl p-6 shadow-xl flex items-center justify-between">
                 <div>
                   <p className="text-gray-400 text-sm font-medium uppercase tracking-wider mb-1">Total Revenue</p>
-                  <h3 className="text-3xl font-black text-white">${analytics.totalRevenue.toLocaleString()}</h3>
+                  <h3 className="text-3xl font-black text-white">₹{analytics.totalRevenue.toLocaleString('en-IN')}</h3>
                 </div>
                 <div className="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center border border-emerald-500/30">
-                  <DollarSign className="text-emerald-400" size={24} />
+                  <IndianRupee className="text-emerald-400" size={24} />
                 </div>
               </div>
               <div className="bg-[#13151a]/80 backdrop-blur-xl border border-white/5 rounded-2xl p-6 shadow-xl flex items-center justify-between">
@@ -543,6 +584,9 @@ const MasterDashboard = () => {
                         <button onClick={() => handleRevokeClick(hotel)} title="Revoke Access" className="w-8 h-8 rounded-full bg-red-900/90 hover:bg-red-800 flex items-center justify-center text-white shadow-lg transition-colors border border-white/10">
                           <Trash2 size={14} />
                         </button>
+                        <button onClick={() => handleRenewClick(hotel)} title="Reactivate / Renew" className="w-8 h-8 rounded-full bg-emerald-600/90 hover:bg-emerald-500 flex items-center justify-center text-white shadow-lg transition-colors border border-white/10">
+                          <Zap size={14} />
+                        </button>
                         <button onClick={() => handleResetClick(hotel)} title="Reset Password" className="w-8 h-8 rounded-full bg-red-600/90 hover:bg-red-500 flex items-center justify-center text-white shadow-lg transition-colors border border-white/10">
                           <Key size={14} />
                         </button>
@@ -555,9 +599,15 @@ const MasterDashboard = () => {
                     <div className="p-5 pt-2 relative">
                       <div className="flex justify-between items-start mb-3">
                         <h3 className="font-extrabold text-white text-lg leading-tight group-hover:text-blue-400 transition-colors">{hotel.name}</h3>
-                        <span className="px-2 py-1 bg-emerald-500/10 text-emerald-400 text-[10px] font-black rounded uppercase tracking-wider border border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.2)]">
-                          Online
-                        </span>
+                        {new Date(hotel.subscriptionEndDate) < new Date() ? (
+                          <span className="px-2 py-1 bg-red-500/10 text-red-400 text-[10px] font-black rounded uppercase tracking-wider border border-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.2)]">
+                            Expired
+                          </span>
+                        ) : (
+                          <span className="px-2 py-1 bg-emerald-500/10 text-emerald-400 text-[10px] font-black rounded uppercase tracking-wider border border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.2)]">
+                            Online
+                          </span>
+                        )}
                       </div>
 
                       <p className="text-xs text-gray-400 flex items-start gap-1.5 mb-4">
@@ -689,9 +739,15 @@ const MasterDashboard = () => {
                           </td>
                           <td className="px-6 py-5">
                             <div className="flex flex-col gap-1">
-                              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 w-fit">
-                                ACTIVE
-                              </span>
+                              {new Date(hotel.subscriptionEndDate) < new Date() ? (
+                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-red-500/10 text-red-400 border border-red-500/20 w-fit">
+                                  EXPIRED
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 w-fit">
+                                  ACTIVE
+                                </span>
+                              )}
                               <p className="text-xs text-gray-400 mt-1">
                                 Ends: <span className="font-semibold text-gray-300">{hotel.subscriptionEndDate ? new Date(hotel.subscriptionEndDate).toLocaleDateString() : 'N/A'}</span>
                               </p>
@@ -701,6 +757,9 @@ const MasterDashboard = () => {
                             <div className="flex justify-end gap-2">
                               <button onClick={() => handleRevokeClick(hotel)} title="Revoke Access" className="w-9 h-9 rounded-xl bg-red-500/10 hover:bg-red-500/20 flex items-center justify-center text-red-500 hover:text-red-400 transition-colors border border-transparent hover:border-red-500/30">
                                 <Trash2 size={16} />
+                              </button>
+                              <button onClick={() => handleRenewClick(hotel)} title="Reactivate / Renew" className="w-9 h-9 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 flex items-center justify-center text-emerald-500 hover:text-emerald-400 transition-colors border border-transparent hover:border-emerald-500/30">
+                                <Zap size={16} />
                               </button>
                               <button onClick={() => handleResetClick(hotel)} title="Reset Password" className="w-9 h-9 rounded-xl bg-white/5 hover:bg-red-500/20 flex items-center justify-center text-gray-400 hover:text-red-400 transition-colors border border-transparent hover:border-red-500/30">
                                 <Key size={16} />
@@ -878,6 +937,87 @@ const MasterDashboard = () => {
               <CheckCircle2 size={20} className="mr-2" /> PAYMENT GRANTED
             </button>
             <p className="text-gray-500 text-xs mt-4">Clicking granted will immediately provision the database.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Renew Modal */}
+      {renewingHotel && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={handleRenewClose}></div>
+          <div className="relative bg-[#13151a] border border-white/10 rounded-2xl p-6 sm:p-8 max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar">
+            <button onClick={handleRenewClose} className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors">
+              <X size={24} />
+            </button>
+            <div className="flex items-center text-emerald-400 mb-6">
+              <Zap size={28} className="mr-3" />
+              <h2 className="text-2xl font-bold text-white">Renew / Reactivate</h2>
+            </div>
+            
+            <p className="text-gray-300 text-sm mb-6">Extend the subscription for <strong className="text-white">{renewingHotel.name}</strong>. If the property is currently expired, it will be instantly reactivated.</p>
+
+            <form onSubmit={handleRenewProceed} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-400 mb-2">Duration to Extend (Months)</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                    <CalendarDays className="h-5 w-5 text-gray-500" />
+                  </div>
+                  <input type="number" min="1" value={renewMonths} onChange={(e) => setRenewMonths(e.target.value)} required className="w-full pl-12 pr-4 py-3 bg-black/50 text-white rounded-xl border border-white/10 focus:border-emerald-500 focus:bg-black/80 focus:ring-1 focus:ring-emerald-500 outline-none transition-all placeholder:text-gray-600 font-medium" />
+                </div>
+                <p className="text-xs text-emerald-500/70 mt-2 font-medium">+1 Free Month applied for every 6 months selected</p>
+              </div>
+              <button type="submit" className="w-full mt-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)]">
+                Proceed to Payment
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Renew Payment Confirmation Modal */}
+      {showRenewPaymentModal && renewPaymentDetails && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/95 backdrop-blur-xl" onClick={() => setShowRenewPaymentModal(false)}></div>
+          <div className="relative bg-[#0f1115] border border-emerald-500/30 rounded-3xl p-6 sm:p-10 max-w-md w-full shadow-[0_0_80px_rgba(16,185,129,0.2)] max-h-[90vh] overflow-y-auto custom-scrollbar flex flex-col items-center text-center">
+            <button onClick={() => setShowRenewPaymentModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors">
+              <X size={24} />
+            </button>
+            
+            <div className="w-16 h-16 bg-emerald-600/20 rounded-full flex items-center justify-center mb-4 border border-emerald-500/30">
+              <QrCode className="text-emerald-500" size={32} />
+            </div>
+            
+            <h2 className="text-3xl font-black text-white tracking-tight mb-2">₹{renewPaymentDetails.amount.toLocaleString('en-IN')}</h2>
+            <p className="text-emerald-400 font-semibold uppercase tracking-widest text-xs mb-6">Total Payable Amount</p>
+
+            <div className="w-full bg-white p-4 rounded-2xl mb-6 shadow-inner flex justify-center">
+              <img src="/payment-qr.png" alt="Payment QR Code" className="max-w-[200px] w-full rounded-xl mix-blend-multiply" />
+            </div>
+
+            <div className="w-full bg-emerald-500/5 border border-emerald-500/10 rounded-xl p-4 mb-8 space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-gray-400 text-sm">Base Extension</span>
+                <span className="text-white font-bold">{renewPaymentDetails.paidMonths} Months</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-emerald-400 text-sm">Complimentary</span>
+                <span className="text-emerald-400 font-bold">+{renewPaymentDetails.freeMonths} Months</span>
+              </div>
+              <div className="h-px w-full bg-white/5 my-2"></div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-300 font-semibold">Total Added Validity</span>
+                <span className="text-emerald-400 font-black text-lg">{renewPaymentDetails.totalMonths} Months</span>
+              </div>
+            </div>
+
+            <button 
+              onClick={handleRenewGranted} 
+              className="w-full bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-black py-4 rounded-xl transition-all flex items-center justify-center shadow-[0_0_30px_rgba(16,185,129,0.3)] active:scale-95"
+            >
+              <CheckCircle2 size={20} className="mr-2" /> PAYMENT RECEIVED
+            </button>
+            <p className="text-gray-500 text-xs mt-4">Database will be extended instantly.</p>
           </div>
         </div>
       )}
