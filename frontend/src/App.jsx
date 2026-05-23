@@ -5,6 +5,7 @@ import MasterLogin from './pages/MasterLogin';
 import AdminDashboard from './pages/AdminDashboard';
 import UserDashboard from './pages/UserDashboard';
 import MasterDashboard from './pages/MasterDashboard';
+import ProtectedRoute from './components/ProtectedRoute';
 
 import { Toaster } from 'react-hot-toast';
 
@@ -24,9 +25,19 @@ function App() {
             <Route path="/" element={<Navigate to="/login" replace />} />
             <Route path="/login" element={<Login />} />
             <Route path="/master-secure-login" element={<MasterLogin />} />
-            <Route path="/admin/*" element={<AdminDashboard />} />
-            <Route path="/staff/*" element={<UserDashboard />} />
-            <Route path="/master/*" element={<MasterDashboard />} />
+            
+            {/* Protected Routes */}
+            <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
+              <Route path="/admin/*" element={<AdminDashboard />} />
+            </Route>
+            
+            <Route element={<ProtectedRoute allowedRoles={['user', 'staff']} />}>
+              <Route path="/staff/*" element={<UserDashboard />} />
+            </Route>
+            
+            <Route element={<ProtectedRoute allowedRoles={['master']} />}>
+              <Route path="/master/*" element={<MasterDashboard />} />
+            </Route>
           </Routes>
         </div>
       </Router>
