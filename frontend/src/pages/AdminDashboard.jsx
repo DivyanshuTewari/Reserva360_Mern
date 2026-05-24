@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Building2, Users, BedDouble, CalendarDays, Receipt, Network, RefreshCw, LogOut, Settings } from 'lucide-react';
+import { LayoutDashboard, Building2, Users, BedDouble, CalendarDays, Receipt, Network, RefreshCw, LogOut, Settings, Menu, X } from 'lucide-react';
 import AdminOverview from '../components/admin/AdminOverview';
 import PropertySettings from '../components/admin/PropertySettings';
 import StaffManagement from '../components/admin/StaffManagement';
@@ -12,12 +12,21 @@ const AdminDashboard = () => {
   const { user, logout } = useContext(AuthContext);
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
+  // Auto-collapse sidebar on smaller screens on mount/resize
   useEffect(() => {
-    if (!user || user.role !== 'admin') {
-      navigate('/login');
-    }
-  }, [user, navigate]);
+    const handleResize = () => {
+      if (window.innerWidth < 1024) {
+        setIsSidebarOpen(false);
+      } else {
+        setIsSidebarOpen(true);
+      }
+    };
+    handleResize(); // Call on mount
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const handleLogout = () => {
     logout();
@@ -66,10 +75,30 @@ const AdminDashboard = () => {
         <div className="absolute inset-0 bg-[#0f1115]/85 backdrop-blur-2xl"></div>
       </div>
 
+      {/* Dim overlay backdrop for mobile when sidebar is open */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-20 lg:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
+      {/* Floating Menu Button (Mobile & Desktop when sidebar is closed) */}
+      {!isSidebarOpen && (
+        <button 
+          onClick={() => setIsSidebarOpen(true)}
+          className="fixed top-6 left-6 z-40 p-3 bg-[#13151a]/95 hover:bg-slate-800 backdrop-blur-md border border-white/10 rounded-xl text-white transition-all shadow-xl hover:shadow-blue-500/10 active:scale-95 flex items-center justify-center"
+        >
+          <Menu size={20} />
+        </button>
+      )}
+
       {/* Sidebar - Glassmorphism */}
-      <div className="w-72 bg-black/40 backdrop-blur-3xl border-r border-white/10 flex flex-col shadow-[10px_0_30px_rgba(0,0,0,0.5)] relative z-20">
+      <div className={`fixed top-0 left-0 bottom-0 w-72 bg-black/45 backdrop-blur-3xl border-r border-white/10 flex flex-col shadow-[10px_0_30px_rgba(0,0,0,0.5)] z-30 transition-transform duration-300 ease-in-out ${
+        isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+      }`}>
         {/* Header */}
-        <div className="p-6 border-b border-white/5">
+        <div className="p-6 border-b border-white/5 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-[#2563eb] flex items-center justify-center font-bold text-white text-xl shadow-lg shadow-blue-500/20">
               H
@@ -79,6 +108,13 @@ const AdminDashboard = () => {
               <span className="text-xs text-blue-400 font-semibold uppercase tracking-wider">Admin Portal</span>
             </div>
           </div>
+          {/* Close Sidebar button */}
+          <button 
+            onClick={() => setIsSidebarOpen(false)}
+            className="p-1.5 hover:bg-white/5 rounded-lg text-slate-400 hover:text-white transition-colors"
+          >
+            <X size={18} />
+          </button>
         </div>
         
         {/* Nav Links */}
@@ -86,7 +122,13 @@ const AdminDashboard = () => {
           {navItems.map(item => (
             <button
               key={item.id}
-              onClick={() => setActiveTab(item.id)}
+              onClick={() => {
+                setActiveTab(item.id);
+                // Auto close sidebar on mobile/tablet after selection
+                if (window.innerWidth < 1024) {
+                  setIsSidebarOpen(false);
+                }
+              }}
               className={`w-full flex items-center px-4 py-3.5 rounded-xl transition-all font-medium text-sm ${
                 activeTab === item.id 
                   ? 'bg-blue-600/10 text-[#3b82f6] shadow-sm border border-blue-500/20' 
@@ -121,8 +163,12 @@ const AdminDashboard = () => {
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 overflow-y-auto relative z-10 custom-scrollbar">
-        <div className="relative h-full p-8 md:p-12">
+      <div className={`flex-1 min-h-screen transition-all duration-300 ease-in-out relative custom-scrollbar overflow-y-auto overflow-x-hidden ${
+        isSidebarOpen ? 'lg:ml-72' : 'lg:ml-0'
+      }`}>
+        <div className="relative h-full p-4 md:p-6 lg:p-8">
+          {/* Top spacer when sidebar is closed on desktop/mobile to prevent overlap with the menu toggle button */}
+          {!isSidebarOpen && <div className="h-10 w-full" />}
           {renderContent()}
         </div>
       </div>

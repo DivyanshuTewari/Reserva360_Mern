@@ -18,7 +18,37 @@ const bookingSchema = new mongoose.Schema({
     enum: ['pending', 'paid', 'partial'],
     default: 'pending'
   },
-  bookingGroupId: { type: String }
+  paymentMode: { type: String, enum: ['Prepaid', 'Pay At Hotel', 'Bill To Company'], default: 'Prepaid' },
+  paymentMethod: { type: String, default: 'Cash' },
+  paymentReference: { type: String },
+  internalNotes: { type: String },
+  paidAmount: { type: Number, default: 0 },
+  pendingAmount: { type: Number, default: 0 },
+  bookingGroupId: { type: String },
+  adults: { type: Number, default: 2 },
+  children: { type: Number, default: 0 },
+  infant: { type: Number, default: 0 },
+  mealPlan: { type: String, default: 'Room Only' },
+  cost: { type: Number, default: 0 },
+  gst: { type: Number, default: 0 },
+  discount: { type: Number, default: 0 },
+  discountType: { type: String, enum: ['flat', 'percent'], default: 'flat' },
+  discountValue: { type: Number, default: 0 },
+  gstMode: { type: String, enum: ['inclusive', 'exclusive', 'out_of_scope'], default: 'exclusive' },
+  guestEmail: { type: String },
+  guestAddress: { type: String },
+  guestDob: { type: Date },
+  guestCountry: { type: String, default: 'India' },
+  guestState: { type: String },
+  guestCity: { type: String },
+  companyName: { type: String },
+  companyGst: { type: String },
+  companyAddress: { type: String },
+  idProofType: { type: String },
+  idProofNumber: { type: String },
+  nationality: { type: String, default: 'Indian' },
+  arrivalTime: { type: String },
+  specialRequests: { type: String }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Booking', bookingSchema);

@@ -236,3 +236,34 @@ exports.createStaff = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+// @desc    Update Booking Details
+// @route   PATCH /api/admin/bookings/:id
+// @access  Private/Admin
+exports.updateBooking = async (req, res) => {
+  try {
+    const booking = await Booking.findOneAndUpdate(
+      { _id: req.params.id, hotelId: req.user.hotelId },
+      req.body,
+      { returnDocument: 'after' }
+    ).populate('roomId', 'roomNumber roomTypeId');
+    res.json(booking);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Delete Booking
+// @route   DELETE /api/admin/bookings/:id
+// @access  Private/Admin
+exports.deleteBooking = async (req, res) => {
+  try {
+    const booking = await Booking.findOneAndDelete({ _id: req.params.id, hotelId: req.user.hotelId });
+    if (!booking) {
+      return res.status(404).json({ message: 'Booking not found' });
+    }
+    res.json({ message: 'Booking removed successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
