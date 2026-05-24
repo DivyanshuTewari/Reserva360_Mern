@@ -17,7 +17,8 @@ const bookingSchema = new mongoose.Schema({
     type: String,
     enum: ['pending', 'paid', 'partial'],
     default: 'pending'
-  }
+  },
+  bookingGroupId: { type: String }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Booking', bookingSchema);

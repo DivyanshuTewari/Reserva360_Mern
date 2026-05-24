@@ -1,19 +1,23 @@
 import React, { useState, useContext } from 'react';
-import { Building2, Mail, Lock, LogIn } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import api from '../utils/api';
+import { X, Phone, Mail, Users, Loader2 } from 'lucide-react';
 
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [showContact, setShowContact] = useState(false);
+  const [contactMode, setContactMode] = useState('register');
+  const [isLoading, setIsLoading] = useState(false);
   const { login } = useContext(AuthContext);
   const navigate = useNavigate();
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
+    setIsLoading(true);
     try {
       const res = await api.post('/auth/login', { email, password });
       login(res.data);
@@ -24,104 +28,159 @@ const Login = () => {
       }
     } catch (err) {
       setError(err.response?.data?.message || 'Login failed');
+      setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex flex-col md:flex-row">
-      {/* Left section - Branding */}
-      <div className="md:w-1/2 bg-gradient-to-br from-primary-700 to-dark-900 text-white flex flex-col justify-center items-center p-12 relative overflow-hidden">
-        {/* Abstract decorative elements */}
-        <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-primary-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob"></div>
-        <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-blue-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000"></div>
-        
-        <div className="z-10 text-center max-w-md glass p-10 rounded-2xl">
-          <div className="inline-flex items-center justify-center p-4 bg-white/10 rounded-full mb-6">
-            <Building2 size={48} className="text-primary-100" />
+    <div className="min-h-screen flex font-sans bg-[#0f1115]">
+      {/* Left section - Form */}
+      <div className="w-full md:w-[40%] flex flex-col justify-center px-8 sm:px-16 lg:px-24 relative z-10">
+        <div className="max-w-md w-full mx-auto">
+          {/* Logo */}
+          <div className="flex items-center gap-3 mb-12">
+            <div className="w-10 h-10 rounded-lg bg-[#3b82f6] flex items-center justify-center font-bold text-white text-xl shadow-lg shadow-blue-500/20">
+              H
+            </div>
+            <span className="text-xl font-black tracking-widest text-white">RESERVA360</span>
           </div>
-          <h1 className="text-4xl font-bold mb-4 tracking-tight">Reserva<span className="text-primary-400">360</span></h1>
-          <p className="text-lg text-slate-300 font-light leading-relaxed">
-            The intelligent, cloud-based property management system designed to elevate your hotel operations and guest experience.
-          </p>
-        </div>
-      </div>
 
-      {/* Right section - Login Form */}
-      <div className="md:w-1/2 bg-slate-50 flex items-center justify-center p-8">
-        <div className="w-full max-w-md card">
-          <div className="text-center mb-10">
-            <h2 className="text-3xl font-bold text-slate-800 tracking-tight">Welcome Back</h2>
-            <p className="text-slate-500 mt-2">Sign in to manage your property</p>
-          </div>
+          <h1 className="text-[2rem] font-extrabold text-white tracking-tight mb-2 leading-tight">Sign in to your account</h1>
+          <p className="text-sm text-gray-400 mb-10">
+            Or <a href="#" onClick={(e) => { e.preventDefault(); setContactMode('register'); setShowContact(true); }} className="text-[#3b82f6] hover:text-blue-400 font-medium transition-colors">register your hotel</a>
+          </p>
 
           <form onSubmit={handleLogin} className="space-y-6">
             {error && (
-              <div className="bg-red-50 text-red-500 border border-red-200 px-4 py-3 rounded-lg text-sm">
-                {error}
+              <div className="bg-red-500/10 text-red-500 border border-red-500/20 px-4 py-3 rounded-xl text-sm font-medium">
+                <p>{error}</p>
+                {error.includes('subscription has expired') && (
+                  <button 
+                    type="button" 
+                    onClick={() => { setContactMode('expired'); setShowContact(true); }} 
+                    className="mt-2 text-red-400 hover:text-red-300 font-bold underline"
+                  >
+                    View Contact Details
+                  </button>
+                )}
               </div>
             )}
+            
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">Email Address</label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Mail className="h-5 w-5 text-slate-400" />
-                </div>
-                <input
-                  type="email"
-                  required
-                  className="input-field pl-10"
-                  placeholder="admin@hotel.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
+              <label className="block text-sm font-medium text-white mb-2">Email address</label>
+              <input
+                type="email"
+                required
+                className="w-full px-4 py-3.5 bg-[#f0f4f8] text-gray-900 rounded-xl border border-transparent focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all font-medium text-sm"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">Password</label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Lock className="h-5 w-5 text-slate-400" />
-                </div>
-                <input
-                  type="password"
-                  required
-                  className="input-field pl-10"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-white">Password</label>
               </div>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <input id="remember-me" type="checkbox" className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded" />
-                <label htmlFor="remember-me" className="ml-2 block text-sm text-slate-600">
-                  Remember me
-                </label>
-              </div>
-              <div className="text-sm">
-                <a href="#" className="font-medium text-primary-600 hover:text-primary-500 transition">
-                  Forgot password?
-                </a>
-              </div>
+              <input
+                type="password"
+                required
+                className="w-full px-4 py-3.5 bg-[#f0f4f8] text-gray-900 rounded-xl border border-transparent focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all font-medium text-lg tracking-widest"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
             </div>
 
             <button
               type="submit"
-              className="w-full flex justify-center items-center py-3 px-4 border border-transparent rounded-lg shadow-md text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-colors duration-300"
+              disabled={isLoading}
+              className="w-full py-3.5 bg-[#2563eb] hover:bg-blue-600 text-white rounded-xl font-bold transition-all active:scale-[0.98] mt-2 shadow-[0_0_15px_rgba(37,99,235,0.4)] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center"
             >
-              <LogIn className="w-5 h-5 mr-2" />
-              Sign In
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" /> Authenticating...
+                </>
+              ) : (
+                'Sign in'
+              )}
             </button>
           </form>
-          
-          <div className="mt-8 text-center text-sm text-slate-500">
-            <p>Secure login powered by Reserva360</p>
-          </div>
         </div>
       </div>
+
+      {/* Right section - Image */}
+      <div className="hidden md:block md:w-[60%] relative">
+        <img
+          src="https://images.unsplash.com/photo-1582719508461-905c673771fd?auto=format&fit=crop&w=2000&q=80"
+          alt="Luxury Hotel Room"
+          className="absolute inset-0 w-full h-full object-cover"
+        />
+        {/* Deep gradient overlay to ensure text is readable and blends smoothly */}
+        <div className="absolute inset-0 bg-gradient-to-t from-[#0f1115] via-[#0f1115]/40 to-transparent"></div>
+        <div className="absolute inset-0 bg-gradient-to-r from-[#0f1115] via-transparent to-transparent opacity-80"></div>
+        
+        {/* Text at bottom */}
+        <div className="absolute bottom-16 left-16 right-16 z-10">
+          <h2 className="text-[2.75rem] font-black text-white mb-3 tracking-tight drop-shadow-lg">Enterprise Operations, Simplified.</h2>
+          <p className="text-xl text-gray-200 font-semibold drop-shadow-md">360° Control. 360° Growth</p>
+        </div>
+      </div>
+
+      {/* Contact Modal */}
+      {showContact && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowContact(false)}></div>
+          <div className="relative bg-[#0f1115] border border-white/10 rounded-2xl p-8 max-w-2xl w-full shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <button onClick={() => setShowContact(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors">
+              <X size={24} />
+            </button>
+            
+            <div className="flex flex-col items-center text-center mb-8">
+              <div className="w-16 h-16 bg-[#3b82f6]/20 rounded-full flex items-center justify-center mb-4 border border-[#3b82f6]/30">
+                <Users className="text-[#3b82f6]" size={32} />
+              </div>
+              <h2 className="text-3xl font-bold text-white mb-3 tracking-tight">
+                {contactMode === 'register' ? 'Partner With Us' : 'Subscription Suspended'}
+              </h2>
+              <p className="text-gray-400 text-sm max-w-lg mx-auto">
+                {contactMode === 'register' 
+                  ? 'Reserva360 is an exclusive enterprise platform. To ensure the highest quality of service, we manually onboard every property. Contact our deployment team to schedule a face-to-face consultation and get your dedicated instance provisioned.'
+                  : 'Your property\'s enterprise instance has been temporarily suspended due to subscription expiry. Please contact our master administration team immediately to renew your subscription and restore access without data loss.'}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-white/5 rounded-xl p-6 border border-white/5">
+                <h3 className="text-white font-semibold mb-4 flex items-center">
+                  <Phone className="w-5 h-5 mr-2 text-[#3b82f6]" /> Direct Lines
+                </h3>
+                <ul className="space-y-3 text-sm text-gray-300">
+                  <li><a href="tel:+917505738477" className="hover:text-[#3b82f6] transition-colors">+91 75057 38477</a></li>
+                  <li><a href="tel:+917302174046" className="hover:text-[#3b82f6] transition-colors">+91 73021 74046</a></li>
+                  <li><a href="tel:+918954780441" className="hover:text-[#3b82f6] transition-colors">+91 89547 80441</a></li>
+                  <li><a href="tel:+917505527715" className="hover:text-[#3b82f6] transition-colors">+91 75055 27715</a></li>
+                  <li><a href="tel:+919528299930" className="hover:text-[#3b82f6] transition-colors">+91 95282 99930</a></li>
+                </ul>
+              </div>
+
+              <div className="bg-white/5 rounded-xl p-6 border border-white/5">
+                <h3 className="text-white font-semibold mb-4 flex items-center">
+                  <Mail className="w-5 h-5 mr-2 text-[#3b82f6]" /> Email Desks
+                </h3>
+                <ul className="space-y-3 text-sm text-gray-300 break-all">
+                  <li><a href="mailto:divyanshutiwari500@gmail.com" className="hover:text-[#3b82f6] transition-colors">divyanshutiwari500@gmail.com</a></li>
+                  <li><a href="mailto:charanjeetrawat9442@gmail.com" className="hover:text-[#3b82f6] transition-colors">charanjeetrawat9442@gmail.com</a></li>
+                  <li><a href="mailto:anujbhatt84@gmail.com" className="hover:text-[#3b82f6] transition-colors">anujbhatt84@gmail.com</a></li>
+                </ul>
+              </div>
+            </div>
+            
+            <button onClick={() => setShowContact(false)} className="w-full mt-8 py-3.5 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold transition-all">
+              Close Window
+            </button>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
