@@ -267,3 +267,18 @@ exports.deleteBooking = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+// @desc    Delete Room
+// @route   DELETE /api/admin/rooms/:id
+// @access  Private/Admin
+exports.deleteRoom = async (req, res) => {
+  try {
+    const room = await Room.findOneAndDelete({ _id: req.params.id, hotelId: req.user.hotelId });
+    if (!room) {
+      return res.status(404).json({ message: 'Room not found' });
+    }
+    res.json({ message: 'Room deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};

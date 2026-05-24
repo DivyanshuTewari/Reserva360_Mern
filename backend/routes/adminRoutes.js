@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { updateHotelProfile, createRoomType, createRooms, createStaff, getHotelProfile, getStaffList, getRoomTypes, getRooms, updateRoomStatus, getRatePlans, createRatePlan, deleteRatePlan, getBookings, createBooking, updateBookingStatus, updateBooking, deleteBooking } = require('../controllers/adminController');
+const { updateHotelProfile, createRoomType, createRooms, deleteRoom, createStaff, getHotelProfile, getStaffList, getRoomTypes, getRooms, updateRoomStatus, getRatePlans, createRatePlan, deleteRatePlan, getBookings, createBooking, updateBookingStatus, updateBooking, deleteBooking } = require('../controllers/adminController');
 const { protect, authorize } = require('../middleware/authMiddleware');
 
 router.get('/hotel', protect, authorize('admin'), getHotelProfile);
@@ -10,6 +10,7 @@ router.post('/room-types', protect, authorize('admin'), createRoomType);
 router.get('/rooms', protect, authorize('admin'), getRooms);
 router.post('/rooms', protect, authorize('admin'), createRooms);
 router.put('/rooms/:id/status', protect, authorize('admin'), updateRoomStatus);
+router.delete('/rooms/:id', protect, authorize('admin'), deleteRoom);
 router.get('/staff', protect, authorize('admin'), getStaffList);
 router.post('/staff', protect, authorize('admin'), createStaff);
 
