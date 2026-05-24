@@ -1065,7 +1065,7 @@ const BookingEngine = () => {
                                 ))}
 
                                 {/* Perfectly Aligned Table-Based Summary Rows */}
-                                <tr className="bg-[#16181f] font-bold text-slate-300 border-t border-white/15 sticky bottom-[145px] z-10">
+                                <tr className="bg-[#16181f] font-bold text-slate-300 border-t border-white/15">
                                   <td className="px-2 py-3 border-r border-white/5">Rooms: <span className="text-white">{selectedRooms.length}</span></td>
                                   <td className="px-2 py-3 border-r border-white/5 text-center">Adults: <span className="text-white">{selectedRooms.reduce((acc, r) => acc + (r.adults || 0), 0)}</span></td>
                                   <td className="px-2 py-3 border-r border-white/5 text-center" colSpan={2}>Child: <span className="text-white">{selectedRooms.reduce((acc, r) => acc + (r.children || 0), 0)}</span></td>
@@ -1074,12 +1074,12 @@ const BookingEngine = () => {
                                   <td className="px-2 py-3 text-right font-black text-white text-sm" colSpan={2}>₹{totalNetCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                 </tr>
 
-                                <tr className="bg-[#13151a] font-bold text-slate-300 border-t border-white/5 sticky bottom-[110px] z-10">
+                                <tr className="bg-[#13151a] font-bold text-slate-300 border-t border-white/5">
                                   <td className="px-2 py-3" colSpan={7}>Total GST</td>
                                   <td className="px-2 py-3 text-right font-black text-slate-300" colSpan={2}>₹{totalGST.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                 </tr>
 
-                                <tr className="bg-[#16181f] font-bold text-slate-300 border-t border-white/5 sticky bottom-[55px] z-10">
+                                <tr className="bg-[#16181f] font-bold text-slate-300 border-t border-white/5">
                                   <td className="px-2 py-3 border-r border-white/5" colSpan={2}>Total Discount</td>
                                   <td className="p-1 border-r border-white/5 align-middle" colSpan={5}>
                                     <div className="flex items-center gap-2 max-w-xs">
@@ -1110,7 +1110,7 @@ const BookingEngine = () => {
                                   <td className="px-2 py-3 text-right font-black text-rose-400" colSpan={2}>- ₹{totalDiscount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                 </tr>
 
-                                <tr className="bg-[#1a1d24] font-black border-t border-white/15 text-white sticky bottom-0 z-10 shadow-[0_-8px_20px_rgba(0,0,0,0.6)]">
+                                <tr className="bg-[#1a1d24] font-black border-t border-white/15 text-white shadow-[0_-8px_20px_rgba(0,0,0,0.6)]">
                                   <td className="px-2 py-4 text-sm" colSpan={7}>Payable Amount</td>
                                   <td className="px-2 py-4 text-right text-base md:text-lg text-emerald-400 bg-emerald-500/10 shadow-inner rounded-br-2xl font-black" colSpan={2}>
                                     ₹{payableAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
