@@ -1,9 +1,23 @@
-import React, { useContext } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { AuthContext } from '../../context/AuthContext';
-import { BedDouble, CalendarDays, Receipt, Users } from 'lucide-react';
+import { BedDouble, CalendarDays, Receipt, Users, MapPin } from 'lucide-react';
+import api from '../../utils/api';
 
 const AdminOverview = () => {
   const { user } = useContext(AuthContext);
+  const [hotelProfile, setHotelProfile] = useState(null);
+
+  useEffect(() => {
+    const fetchHotel = async () => {
+      try {
+        const res = await api.get('/admin/hotel');
+        setHotelProfile(res.data);
+      } catch (error) {
+        console.error('Failed to fetch hotel profile', error);
+      }
+    };
+    fetchHotel();
+  }, []);
 
   const stats = [
     { label: 'Available Rooms', value: '--', icon: BedDouble, color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
@@ -23,9 +37,21 @@ const AdminOverview = () => {
         <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/60 to-transparent"></div>
         
         <div className="relative z-10 p-10 md:p-14">
-          <h2 className="text-4xl md:text-5xl font-black text-white tracking-tight mb-4 drop-shadow-lg">
+          <h2 className="text-4xl md:text-5xl font-black text-white tracking-tight mb-2 drop-shadow-lg">
             Welcome back, <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">{user?.name}</span>
           </h2>
+          {hotelProfile && (
+            <div className="flex items-center gap-2 text-blue-200 mb-6 drop-shadow-md font-medium tracking-wide">
+              <span className="bg-blue-600/20 px-3 py-1 rounded-full text-blue-300 border border-blue-500/30 text-sm font-bold uppercase tracking-widest">{hotelProfile.name}</span>
+              {hotelProfile.address && (
+                <>
+                  <span className="text-blue-400/50">•</span>
+                  <MapPin size={16} className="text-emerald-400" />
+                  <span className="text-slate-300 text-sm">{hotelProfile.address}</span>
+                </>
+              )}
+            </div>
+          )}
           <p className="text-lg text-slate-300 max-w-xl leading-relaxed drop-shadow-md">
             Here is an overview of your property's performance today. The environment is active and guests are arriving.
           </p>

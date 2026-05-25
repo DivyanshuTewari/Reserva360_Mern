@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 
-const AvailabilityCalendar = ({ roomTypes, rooms }) => {
+const AvailabilityCalendar = ({ roomTypes, rooms, bookings = [] }) => {
   const [startDate, setStartDate] = useState(new Date());
-  const daysToShow = 14;
+  const daysToShow = 7;
 
   // Generate date headers
   const getDates = () => {
@@ -36,18 +36,43 @@ const AvailabilityCalendar = ({ roomTypes, rooms }) => {
     return 'bg-emerald-500 text-white font-bold';
   };
 
+  const getStatsForDateAndType = (date, type) => {
+    const typeRooms = rooms.filter(r => r.roomTypeId?._id === type._id || r.roomTypeId === type._id);
+    const total = typeRooms.length;
+    const blocked = typeRooms.filter(r => r.status === 'maintenance' || r.status === 'cleaning').length;
+
+    let booked = 0;
+    bookings.forEach(b => {
+      if (b.status === 'cancelled' || b.status === 'checked-out') return;
+      
+      const isThisType = typeRooms.some(tr => tr._id === (b.roomId?._id || b.roomId));
+      if (!isThisType) return;
+
+      const checkIn = new Date(b.checkInDate);
+      checkIn.setHours(0,0,0,0);
+      const checkOut = new Date(b.checkOutDate);
+      checkOut.setHours(0,0,0,0);
+      const current = new Date(date);
+      current.setHours(0,0,0,0);
+
+      if (current >= checkIn && current < checkOut) {
+        booked++;
+      }
+    });
+
+    // Ensure available doesn't go below 0 visually if overbooked, though overbooking is unlikely in this system
+    const available = Math.max(0, total - blocked - booked);
+    return { total, blocked, booked, available };
+  };
+
   // Calculate daily stats across all rooms
   const dailyStats = dates.map(date => {
     let totalAvailable = 0;
     let totalInventory = rooms.length;
 
     roomTypes.forEach(type => {
-      const typeRooms = rooms.filter(r => r.roomTypeId?._id === type._id || r.roomTypeId === type._id);
-      const blocked = typeRooms.filter(r => r.status === 'maintenance' || r.status === 'cleaning').length;
-      // Since we don't have a booking engine yet, all non-blocked rooms are available
-      const booked = 0; 
-      const available = typeRooms.length - blocked - booked;
-      totalAvailable += available;
+      const stats = getStatsForDateAndType(date, type);
+      totalAvailable += stats.available;
     });
 
     const occupancyPercent = totalInventory === 0 ? 0 : Math.round(((totalInventory - totalAvailable) / totalInventory) * 100);
@@ -61,8 +86,8 @@ const AvailabilityCalendar = ({ roomTypes, rooms }) => {
         <table className="w-full text-sm text-left border-collapse min-w-[1000px]">
           <thead>
             <tr className="bg-[#1a1d24]">
-              <th className="p-4 border-b border-r border-white/10 w-64">
-                <div className="text-orange-500 font-bold uppercase tracking-wider">Room Category</div>
+              <th className="p-4 border-b border-r border-white/10 w-40">
+                <div className="text-orange-500 font-bold uppercase tracking-wider text-xs">Room Category</div>
               </th>
               <th className="p-4 border-b border-r border-white/10 w-24 text-center text-blue-400 font-bold uppercase">Pre</th>
               <th className="p-4 border-b border-r border-white/10 w-28 text-center text-purple-400 font-bold uppercase">Type</th>
@@ -81,11 +106,7 @@ const AvailabilityCalendar = ({ roomTypes, rooms }) => {
             {roomTypes.map((type, index) => {
               const typeRooms = rooms.filter(r => r.roomTypeId?._id === type._id || r.roomTypeId === type._id);
               const total = typeRooms.length;
-              // Mock real-time availability: for now it's static since no booking engine
-              // Blocked are those in maintenance or cleaning
-              const blocked = typeRooms.filter(r => r.status === 'maintenance' || r.status === 'cleaning').length;
-              const booked = 0;
-              const available = total - blocked - booked;
+              const typeStatsByDate = dates.map(d => getStatsForDateAndType(d, type));
 
               return (
                 <React.Fragment key={type._id}>
@@ -103,10 +124,10 @@ const AvailabilityCalendar = ({ roomTypes, rooms }) => {
                       </td>
                     )}
                     <td className="p-2 border-r border-white/10 text-slate-300 text-xs font-semibold tracking-wider">AVAILABLE</td>
-                    {dates.map((_, i) => (
+                    {typeStatsByDate.map((stats, i) => (
                       <td key={`avail-${i}`} className="p-1 border-white/5 text-center">
-                        <div className={`py-2 px-1 rounded text-sm ${getCellColor(available, total)}`}>
-                          {available}
+                        <div className={`py-2 px-1 rounded text-sm ${getCellColor(stats.available, total)}`}>
+                          {stats.available}
                         </div>
                       </td>
                     ))}
@@ -121,18 +142,18 @@ const AvailabilityCalendar = ({ roomTypes, rooms }) => {
                   {/* BOOKED ROW */}
                   <tr className="border-b border-white/5 bg-[#0f1115]/30">
                     <td className="p-2 border-r border-white/10 text-slate-400 text-xs tracking-wider">BOOKED</td>
-                    {dates.map((_, i) => (
+                    {typeStatsByDate.map((stats, i) => (
                       <td key={`book-${i}`} className="p-1 border-white/5 text-center text-slate-400">
-                        {booked}
+                        {stats.booked}
                       </td>
                     ))}
                   </tr>
                   {/* BLOCKED ROW */}
                   <tr className="border-b border-white/10 bg-[#0f1115]/30">
                     <td className="p-2 border-r border-white/10 text-slate-400 text-xs tracking-wider">BLOCKED</td>
-                    {dates.map((_, i) => (
+                    {typeStatsByDate.map((stats, i) => (
                       <td key={`block-${i}`} className="p-1 border-white/5 text-center text-slate-400">
-                        {blocked}
+                        {stats.blocked}
                       </td>
                     ))}
                   </tr>

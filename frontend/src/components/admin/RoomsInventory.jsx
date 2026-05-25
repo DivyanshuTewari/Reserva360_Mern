@@ -9,6 +9,7 @@ const RoomsInventory = () => {
   const [activeTab, setActiveTab] = useState('calendar');
   const [roomTypes, setRoomTypes] = useState([]);
   const [rooms, setRooms] = useState([]);
+  const [bookings, setBookings] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -17,12 +18,14 @@ const RoomsInventory = () => {
 
   const fetchData = async () => {
     try {
-      const [typesRes, roomsRes] = await Promise.all([
+      const [typesRes, roomsRes, bookingsRes] = await Promise.all([
         api.get('/admin/room-types'),
-        api.get('/admin/rooms')
+        api.get('/admin/rooms'),
+        api.get('/admin/bookings')
       ]);
       setRoomTypes(typesRes.data);
       setRooms(roomsRes.data);
+      setBookings(bookingsRes.data);
     } catch (error) {
       toast.error('Failed to load inventory data');
     } finally {
@@ -81,7 +84,7 @@ const RoomsInventory = () => {
       </div>
 
       {activeTab === 'calendar' && (
-        <AvailabilityCalendar roomTypes={roomTypes} rooms={rooms} />
+        <AvailabilityCalendar roomTypes={roomTypes} rooms={rooms} bookings={bookings} />
       )}
       
       {activeTab === 'rates' && (

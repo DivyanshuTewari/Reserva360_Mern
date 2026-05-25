@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
-import { Plus, X, Search, ChevronDown, ChevronRight, CreditCard, User, CalendarDays, Download, Printer, Trash2, Ban } from 'lucide-react';
+import { Plus, X, Search, ChevronDown, ChevronRight, CreditCard, User, CalendarDays, Download, Printer, Trash2, Ban, Loader2 } from 'lucide-react';
 import DatePicker from '../ui/DatePicker';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -12,10 +12,14 @@ const BookingEngine = () => {
   const [roomTypes, setRoomTypes] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [ratePlans, setRatePlans] = useState([]);
+  const [hotelProfile, setHotelProfile] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   
   const [showModal, setShowModal] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState([]);
+  
+  const [bookingToDelete, setBookingToDelete] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   // Stepper state
   const [currentStep, setCurrentStep] = useState(1); // 1: Rooms & Billing, 2: Guest Details, 3: Payment, 4: Confirmation
@@ -281,16 +285,18 @@ const BookingEngine = () => {
 
   const fetchData = async () => {
     try {
-      const [bookingsRes, typesRes, roomsRes, ratesRes] = await Promise.all([
+      const [bookingsRes, typesRes, roomsRes, ratesRes, hotelRes] = await Promise.all([
         api.get('/admin/bookings'),
         api.get('/admin/room-types'),
         api.get('/admin/rooms'),
-        api.get('/admin/rate-plans')
+        api.get('/admin/rate-plans'),
+        api.get('/admin/hotel')
       ]);
       setBookings(bookingsRes.data);
       setRoomTypes(typesRes.data);
       setRooms(roomsRes.data);
       setRatePlans(ratesRes.data);
+      setHotelProfile(hotelRes.data);
     } catch (error) {
       toast.error('Failed to load booking engine data');
     } finally {
@@ -454,7 +460,9 @@ const BookingEngine = () => {
 
     setIsSavingStep(true);
     try {
-      const bookingGroupId = Date.now().toString();
+      const datePart = new Date().toISOString().slice(0,10).replace(/-/g, '');
+      const randomPart = Math.random().toString(36).substring(2, 6).toUpperCase();
+      const bookingGroupId = `BKG-${datePart}-${randomPart}`;
       for (const room of selectedRooms) {
         await api.post('/admin/bookings', {
           roomId: room.roomId,
@@ -523,17 +531,28 @@ const BookingEngine = () => {
     }
   };
 
-  const handleDeleteGroup = async (e, group) => {
+  const handleDeleteGroup = (e, group) => {
     e.stopPropagation();
-    if(!window.confirm(`Are you sure you want to permanently delete the booking for ${group.guestName}?`)) return;
+    setBookingToDelete(group);
+  };
+
+  const confirmDeleteGroup = async () => {
+    if (!bookingToDelete) return;
+    setIsDeleting(true);
     try {
-      for (const room of group.rooms) {
+      for (const room of bookingToDelete.rooms) {
+        // First cancel to free up the physical room
+        await api.put(`/admin/bookings/${room._id}/status`, { status: 'cancelled' });
+        // Then permanently delete the record
         await api.delete(`/admin/bookings/${room._id}`);
       }
       toast.success('Booking deleted successfully');
       fetchData();
+      setBookingToDelete(null);
     } catch (error) {
       toast.error('Failed to delete booking');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -2266,6 +2285,7 @@ const BookingEngine = () => {
         totalGST={totalGST}
         totalDiscount={totalDiscount}
         payableAmount={payableAmount}
+        hotelProfile={hotelProfile}
       />
 
       {/* Hidden Retroactive Voucher for List PDF Download */}
@@ -2281,7 +2301,43 @@ const BookingEngine = () => {
           totalGST={downloadVoucherData.totalGST}
           totalDiscount={downloadVoucherData.totalDiscount}
           payableAmount={downloadVoucherData.payableAmount}
+          hotelProfile={hotelProfile}
         />
+      )}
+
+      {/* Delete Booking Confirmation Modal */}
+      {bookingToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => !isDeleting && setBookingToDelete(null)}></div>
+          <div className="relative bg-[#13151a] border border-red-500/30 rounded-2xl p-8 max-w-sm w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex flex-col items-center text-center">
+              <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mb-4">
+                <Trash2 size={32} />
+              </div>
+              <h3 className="text-xl font-bold text-white mb-2">Delete Booking</h3>
+              <p className="text-slate-400 mb-6">
+                Are you sure you want to permanently delete the booking for <span className="text-white font-bold">{bookingToDelete.guestName}</span>? This action cannot be undone.
+              </p>
+              <div className="flex w-full gap-3">
+                <button 
+                  onClick={() => setBookingToDelete(null)}
+                  disabled={isDeleting}
+                  className="flex-1 py-3 px-4 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold transition-all disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={confirmDeleteGroup}
+                  disabled={isDeleting}
+                  className="flex-1 flex justify-center items-center py-3 px-4 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold transition-all shadow-[0_0_15px_rgba(220,38,38,0.3)] disabled:opacity-70"
+                >
+                  {isDeleting ? <Loader2 size={18} className="animate-spin mr-2" /> : null}
+                  {isDeleting ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -9,7 +9,8 @@ const BookingVoucher = forwardRef(({
   totalNetCost, 
   totalGST, 
   totalDiscount, 
-  payableAmount 
+  payableAmount,
+  hotelProfile 
 }, ref) => {
   const checkIn = new Date(dates.checkIn);
   const checkOut = new Date(dates.checkOut);
@@ -26,18 +27,18 @@ const BookingVoucher = forwardRef(({
           <div>
             <div className="flex items-center gap-3 mb-2">
               <div className="w-12 h-12 bg-slate-800 rounded flex items-center justify-center text-white font-bold text-xl tracking-wider">
-                HM
+                {hotelProfile?.name?.charAt(0) || 'H'}
               </div>
               <div>
-                <h1 className="text-2xl font-black text-slate-800 tracking-tight">Grand Hotel & Suites</h1>
-                <p className="text-xs text-slate-500 font-medium">123 Luxury Avenue, Metropolis, NY 10001</p>
+                <h1 className="text-2xl font-black text-slate-800 tracking-tight">{hotelProfile?.name || 'Grand Hotel & Suites'}</h1>
+                <p className="text-xs text-slate-500 font-medium">{hotelProfile?.address || '123 Luxury Avenue, Metropolis, NY 10001'}</p>
               </div>
             </div>
           </div>
           <div className="text-right">
             <h2 className="text-xl font-black text-blue-600 uppercase tracking-widest mb-1">Booking Voucher</h2>
             <div className="text-sm font-semibold">
-              <p>Booking ID: <span className="font-bold text-slate-900">BOOKING-{bookingId}</span></p>
+              <p>Booking ID: <span className="font-bold text-slate-900">{bookingId}</span></p>
               <p>Date: <span className="font-bold text-slate-900">{new Date().toLocaleDateString('en-GB')}</span></p>
             </div>
           </div>
@@ -179,7 +180,7 @@ const BookingVoucher = forwardRef(({
         {/* Footer */}
         <div className="mt-auto pt-6 border-t border-slate-200 text-center">
           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1">Computer Generated Document</p>
-          <p className="text-[10px] text-slate-400">Thank you for choosing Grand Hotel & Suites. We look forward to hosting you!</p>
+          <p className="text-[10px] text-slate-400">Thank you for choosing {hotelProfile?.name || 'Grand Hotel & Suites'}. We look forward to hosting you!</p>
         </div>
       </div>
     </div>
