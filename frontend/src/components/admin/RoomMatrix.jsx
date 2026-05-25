@@ -7,6 +7,7 @@ import DatePicker from '../ui/DatePicker';
 const StatusDropdown = ({ room, onStatusChange, onBlockRequest, isUpdating }) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
+  const dropdownPanelRef = useRef(null);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -18,56 +19,110 @@ const StatusDropdown = ({ room, onStatusChange, onBlockRequest, isUpdating }) =>
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Scroll dropdown into view when opened
+  useEffect(() => {
+    if (isOpen && dropdownPanelRef.current) {
+      dropdownPanelRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [isOpen]);
+
   const statuses = [
-    { value: 'available', label: 'Available', colorClass: 'text-emerald-400' },
-    { value: 'occupied', label: 'Occupied', colorClass: 'text-blue-400' },
-    { value: 'cleaning', label: 'Cleaning (Date Range)', colorClass: 'text-amber-400', needsDates: true },
-    { value: 'maintenance', label: 'Maintenance (Date Range)', colorClass: 'text-red-400', needsDates: true }
+    {
+      value: 'available',
+      label: 'Available',
+      dot: 'bg-emerald-400',
+      text: 'text-emerald-400',
+      activeBg: 'bg-emerald-500/10',
+      activeBorder: 'border-emerald-500/40',
+    },
+    {
+      value: 'occupied',
+      label: 'Occupied',
+      dot: 'bg-blue-400',
+      text: 'text-blue-400',
+      activeBg: 'bg-blue-500/10',
+      activeBorder: 'border-blue-500/40',
+    },
+    {
+      value: 'cleaning',
+      label: 'Cleaning',
+      subLabel: 'Pick date range',
+      dot: 'bg-amber-400',
+      text: 'text-amber-400',
+      activeBg: 'bg-amber-500/10',
+      activeBorder: 'border-amber-500/40',
+      needsDates: true,
+    },
+    {
+      value: 'maintenance',
+      label: 'Maintenance',
+      subLabel: 'Pick date range',
+      dot: 'bg-red-400',
+      text: 'text-red-400',
+      activeBg: 'bg-red-500/10',
+      activeBorder: 'border-red-500/40',
+      needsDates: true,
+    },
   ];
 
   const currentStatus = statuses.find(s => s.value === room.status) || statuses[0];
 
   return (
-    <div className="relative mt-3 w-full" ref={dropdownRef}>
-      <button 
+    <div className="relative mt-2 w-full" ref={dropdownRef}>
+      <button
         onClick={() => setIsOpen(!isOpen)}
         disabled={isUpdating}
-        className="w-full flex items-center justify-between bg-[#0f1115]/80 text-xs py-1.5 px-3 rounded-md outline-none border border-white/10 hover:border-white/30 transition-all shadow-inner text-left font-medium disabled:opacity-70"
+        className={`w-full flex items-center justify-between text-[10px] py-1.5 px-2.5 rounded-lg border transition-all font-bold disabled:opacity-60 ${currentStatus.activeBg} ${currentStatus.activeBorder} ${currentStatus.text}`}
       >
-        <span className={currentStatus.colorClass}>{currentStatus.label.split(' (')[0]}</span>
+        <div className="flex items-center gap-1.5">
+          <span className={`w-1.5 h-1.5 rounded-full ${currentStatus.dot} shrink-0`} />
+          <span>{currentStatus.label}</span>
+        </div>
         {isUpdating ? (
-          <Loader2 size={12} className="animate-spin text-slate-400" />
+          <Loader2 size={10} className="animate-spin opacity-60" />
         ) : (
-          <svg className={`w-3 h-3 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
+          <svg className={`w-2.5 h-2.5 opacity-60 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7" />
           </svg>
         )}
       </button>
-      
+
       {isOpen && (
-        <div className="absolute z-20 top-full mt-1 left-0 w-full bg-[#13151a] border border-white/10 rounded-md shadow-2xl overflow-hidden py-1 animate-in fade-in zoom-in-95 duration-150 origin-top">
-          {statuses.map(s => (
-            <button
-              key={s.value}
-              onClick={() => {
-                setIsOpen(false);
-                if (s.needsDates) {
-                  onBlockRequest(room, s.value);
-                } else {
-                  onStatusChange(room._id, s.value);
-                }
-              }}
-              className={`w-full text-left px-3 py-2 text-xs hover:bg-white/5 transition-colors ${room.status === s.value ? 'bg-white/10 font-bold' : ''} ${s.colorClass}`}
-            >
-              <span>{s.label.split(' (')[0]}</span>
-              {s.needsDates && <span className="ml-1 text-[9px] opacity-50">(pick dates)</span>}
-            </button>
-          ))}
+        <div ref={dropdownPanelRef} className="absolute z-30 top-full mt-1.5 left-1/2 -translate-x-1/2 w-44 bg-[#13151a]/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden py-1.5 animate-in fade-in zoom-in-95 duration-150 origin-top">
+          <p className="text-[9px] uppercase tracking-widest text-slate-500 font-bold px-3 pt-1 pb-1.5 border-b border-white/5">Set Status</p>
+          {statuses.map(s => {
+            const isActive = room.status === s.value && !s.needsDates;
+            return (
+              <button
+                key={s.value}
+                onClick={() => {
+                  setIsOpen(false);
+                  if (s.needsDates) {
+                    onBlockRequest(room, s.value);
+                  } else {
+                    onStatusChange(room._id, s.value);
+                  }
+                }}
+                className={`w-full flex items-center justify-between px-3 py-2 text-[11px] transition-all hover:bg-white/5 ${isActive ? `${s.activeBg} ${s.text} font-bold` : 'text-slate-300 font-medium'}`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full ${s.dot}`} />
+                  <span>{s.label}</span>
+                </div>
+                {s.needsDates ? (
+                  <span className="text-[8px] text-slate-500 font-normal">+ dates</span>
+                ) : isActive ? (
+                  <span className="text-[8px] opacity-60">✓</span>
+                ) : null}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
   );
 };
+
 
 const RoomMatrix = () => {
   const [roomTypes, setRoomTypes] = useState([]);
