@@ -335,3 +335,120 @@ exports.deleteRoomBlock = async (req, res) => {
   }
 };
 
+
+// @desc    Get Room Rack Data
+// @route   GET /api/admin/room-rack
+// @access  Private/Admin
+exports.getRoomRack = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    if (!startDate || !endDate) return res.status(400).json({ message: 'startDate and endDate are required' });
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    
+    const roomTypes = await RoomType.find({ hotelId: req.user.hotelId }).lean();
+    const rooms = await Room.find({ hotelId: req.user.hotelId }).lean();
+    
+    const bookings = await Booking.find({
+      hotelId: req.user.hotelId,
+      status: { $in: ['confirmed', 'checked-in'] },
+      $or: [
+        { checkInDate: { $lte: end }, checkOutDate: { $gt: start } }
+      ]
+    }).lean();
+
+    const roomBlocks = await RoomBlock.find({
+      hotelId: req.user.hotelId,
+      $or: [
+        { startDate: { $lte: end }, endDate: { $gt: start } }
+      ]
+    }).lean();
+
+    const categories = roomTypes.map(type => ({
+      _id: type._id,
+      name: type.name,
+      rooms: rooms.filter(r => r.roomTypeId.toString() === type._id.toString()).sort((a, b) => a.roomNumber.localeCompare(b.roomNumber))
+    }));
+
+    res.json({
+      categories,
+      bookings: bookings.map(b => ({
+        id: b._id,
+        roomId: b.roomId,
+        guestName: b.guestName,
+        checkInDate: b.checkInDate,
+        checkOutDate: b.checkOutDate,
+        status: b.status,
+        bookingSource: b.bookingSource || 'Direct',
+        paymentStatus: b.paymentStatus
+      })),
+      blocks: roomBlocks.map(b => ({
+        id: b._id,
+        roomId: b.roomId,
+        startDate: b.startDate,
+        endDate: b.endDate,
+        reason: b.reason
+      }))
+    });
+  } catch (error) { res.status(500).json({ message: error.message }); }
+};
+
+// @desc    Search Bookings for Room Rack
+// @route   GET /api/admin/room-rack/search
+// @access  Private/Admin
+exports.searchRackBookings = async (req, res) => {
+  try {
+    const { q } = req.query;
+    if (!q) return res.status(400).json({ message: 'Search query is required' });
+    const hotelId = req.user.hotelId;
+    const regex = new RegExp(q, 'i');
+    
+    const matchingRooms = await Room.find({ hotelId, roomNumber: regex }).select('_id').lean();
+    const roomIds = matchingRooms.map(r => r._id);
+
+    const bookings = await Booking.find({
+      hotelId,
+      status: { $in: ['confirmed', 'checked-in'] },
+      $or: [
+        { guestName: regex },
+        { guestContact: regex },
+        { bookingGroupId: regex },
+        { roomId: { $in: roomIds } }
+      ]
+    }).populate('roomId', 'roomNumber').sort({ checkInDate: -1 }).limit(10).lean();
+
+    res.json(bookings.map(b => ({
+      id: b._id,
+      guestName: b.guestName,
+      roomNumber: b.roomId ? b.roomId.roomNumber : 'N/A',
+      checkInDate: b.checkInDate,
+      checkOutDate: b.checkOutDate,
+      status: b.status
+    })));
+  } catch (error) { res.status(500).json({ message: error.message }); }
+};
+
+// @desc    Get Detailed Booking Information
+// @route   GET /api/admin/bookings/:id/details
+// @access  Private/Admin
+exports.getBookingDetails = async (req, res) => {
+  try {
+    const bookingId = req.params.id;
+    const hotelId = req.user.hotelId;
+    
+    const booking = await Booking.findOne({ _id: bookingId, hotelId }).populate('roomId', 'roomNumber name').populate('hotelId', 'name').lean();
+    if (!booking) return res.status(404).json({ message: 'Booking not found' });
+    
+    const checkInDetails = (booking.status === 'checked-in' || booking.status === 'checked-out') ? {
+      status: 'completed', time: booking.arrivalTime || booking.updatedAt, assignedRoom: booking.roomId?.roomNumber || 'N/A', notes: booking.internalNotes || '', idVerified: !!booking.idProofNumber
+    } : null;
+    const checkOutDetails = (booking.status === 'checked-out') ? {
+      status: 'completed', time: booking.updatedAt, settlementStatus: booking.paymentStatus === 'paid' ? 'Settled' : 'Pending Balance'
+    } : null;
+    
+    const payments = [];
+    if (booking.paidAmount > 0) payments.push({ id: `pay-${booking._id}`, date: booking.createdAt, method: booking.paymentMethod || 'Cash', amount: booking.paidAmount, transactionId: booking.paymentReference || 'N/A' });
+    
+    res.json({ booking, payments, services: [], checkInDetails, checkOutDetails });
+  } catch (error) { res.status(500).json({ message: error.message }); }
+};

@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { Calendar, BarChart2, DollarSign, Settings2 } from 'lucide-react';
 import AvailabilityCalendar from './AvailabilityCalendar';
 import RoomRatePlan from './RoomRatePlan';
+import RoomChart from './RoomChart';
 
 const RoomsInventory = () => {
   const [activeTab, setActiveTab] = useState('calendar');
@@ -101,10 +102,8 @@ const RoomsInventory = () => {
       )}
 
       {activeTab === 'chart' && (
-        <div className="bg-[#13151a]/80 backdrop-blur-xl border border-white/5 rounded-2xl p-12 shadow-xl flex flex-col items-center justify-center text-center mt-6">
-          <Settings2 size={64} className="text-slate-600 mb-4" />
-          <h3 className="text-2xl font-bold text-white mb-2">Coming Soon</h3>
-          <p className="text-slate-400">This module is scheduled for the next deployment phase.</p>
+        <div className="mt-6">
+          <RoomChart />
         </div>
       )}
     </div>
