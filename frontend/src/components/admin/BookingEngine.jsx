@@ -13,6 +13,7 @@ const BookingEngine = () => {
   const [rooms, setRooms] = useState([]);
   const [ratePlans, setRatePlans] = useState([]);
   const [hotelProfile, setHotelProfile] = useState(null);
+  const [roomBlocks, setRoomBlocks] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   
   const [showModal, setShowModal] = useState(false);
@@ -285,23 +286,51 @@ const BookingEngine = () => {
 
   const fetchData = async () => {
     try {
-      const [bookingsRes, typesRes, roomsRes, ratesRes, hotelRes] = await Promise.all([
+      const [bookingsRes, typesRes, roomsRes, ratesRes, hotelRes, blocksRes] = await Promise.all([
         api.get('/admin/bookings'),
         api.get('/admin/room-types'),
         api.get('/admin/rooms'),
         api.get('/admin/rate-plans'),
-        api.get('/admin/hotel')
+        api.get('/admin/hotel'),
+        api.get('/admin/room-blocks')
       ]);
       setBookings(bookingsRes.data);
       setRoomTypes(typesRes.data);
       setRooms(roomsRes.data);
       setRatePlans(ratesRes.data);
       setHotelProfile(hotelRes.data);
+      setRoomBlocks(blocksRes.data);
     } catch (error) {
       toast.error('Failed to load booking engine data');
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const isRoomBlockedForDates = (roomId) => {
+    const checkIn = new Date(dates.checkIn); checkIn.setHours(0,0,0,0);
+    const checkOut = new Date(dates.checkOut); checkOut.setHours(0,0,0,0);
+    return roomBlocks.some(b => {
+      const bRoomId = b.roomId?._id || b.roomId;
+      if (bRoomId !== roomId) return false;
+      const bStart = new Date(b.startDate); bStart.setHours(0,0,0,0);
+      const bEnd = new Date(b.endDate); bEnd.setHours(0,0,0,0);
+      return bStart < checkOut && bEnd >= checkIn;
+    });
+  };
+
+  const isRoomBookedForDates = (roomId) => {
+    const checkIn = new Date(dates.checkIn); checkIn.setHours(0,0,0,0);
+    const checkOut = new Date(dates.checkOut); checkOut.setHours(0,0,0,0);
+    return bookings.some(b => {
+      if (b.status === 'cancelled' || b.status === 'checked-out') return false;
+      const bRoomId = b.roomId?._id || b.roomId;
+      if (bRoomId !== roomId) return false;
+      const bCheckIn = new Date(b.checkInDate); bCheckIn.setHours(0,0,0,0);
+      const bCheckOut = new Date(b.checkOutDate); bCheckOut.setHours(0,0,0,0);
+      // Overlap: new check-in < existing check-out AND new check-out > existing check-in
+      return checkIn < bCheckOut && checkOut > bCheckIn;
+    });
   };
 
   const handleRoomSelect = (categoryId, roomId) => {
@@ -922,7 +951,12 @@ const BookingEngine = () => {
                         </thead>
                         <tbody className="divide-y divide-white/5">
                           {roomTypes.map(category => {
-                            const availableRooms = rooms.filter(r => (r.roomTypeId?._id === category._id || r.roomTypeId === category._id) && r.status === 'available');
+                            const availableRooms = rooms.filter(r => {
+                              const isThisCategory = r.roomTypeId?._id === category._id || r.roomTypeId === category._id;
+                              // Permanently out of service rooms are never shown
+                              const isPermanentlyUnavailable = r.status === 'maintenance' || r.status === 'cleaning';
+                              return isThisCategory && !isPermanentlyUnavailable && !isRoomBlockedForDates(r._id) && !isRoomBookedForDates(r._id);
+                            });
                             return (
                               <tr key={category._id} className="hover:bg-white/5">
                                 <td className="p-3 text-white text-xs font-semibold">{category.name}</td>

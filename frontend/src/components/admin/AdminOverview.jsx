@@ -42,7 +42,7 @@ const AdminOverview = () => {
           </h2>
           {hotelProfile && (
             <div className="flex items-center gap-2 text-blue-200 mb-6 drop-shadow-md font-medium tracking-wide">
-              <span className="bg-blue-600/20 px-3 py-1 rounded-full text-blue-300 border border-blue-500/30 text-sm font-bold uppercase tracking-widest">{hotelProfile.name}</span>
+              <span className="text-white text-sm font-bold">{hotelProfile.name}</span>
               {hotelProfile.address && (
                 <>
                   <span className="text-blue-400/50">•</span>

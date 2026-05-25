@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
-import { Copy, DoorOpen, X, Trash2, Plus, Loader2 } from 'lucide-react';
+import { Plus, Copy, DoorOpen, Trash2, X, Loader2, ShieldAlert, Calendar } from 'lucide-react';
+import DatePicker from '../ui/DatePicker';
 
-const StatusDropdown = ({ room, onStatusChange, isUpdating }) => {
+const StatusDropdown = ({ room, onStatusChange, onBlockRequest, isUpdating }) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
 
@@ -20,8 +21,8 @@ const StatusDropdown = ({ room, onStatusChange, isUpdating }) => {
   const statuses = [
     { value: 'available', label: 'Available', colorClass: 'text-emerald-400' },
     { value: 'occupied', label: 'Occupied', colorClass: 'text-blue-400' },
-    { value: 'cleaning', label: 'Cleaning', colorClass: 'text-amber-400' },
-    { value: 'maintenance', label: 'Maintenance', colorClass: 'text-red-400' }
+    { value: 'cleaning', label: 'Cleaning (Date Range)', colorClass: 'text-amber-400', needsDates: true },
+    { value: 'maintenance', label: 'Maintenance (Date Range)', colorClass: 'text-red-400', needsDates: true }
   ];
 
   const currentStatus = statuses.find(s => s.value === room.status) || statuses[0];
@@ -33,7 +34,7 @@ const StatusDropdown = ({ room, onStatusChange, isUpdating }) => {
         disabled={isUpdating}
         className="w-full flex items-center justify-between bg-[#0f1115]/80 text-xs py-1.5 px-3 rounded-md outline-none border border-white/10 hover:border-white/30 transition-all shadow-inner text-left font-medium disabled:opacity-70"
       >
-        <span className={currentStatus.colorClass}>{currentStatus.label}</span>
+        <span className={currentStatus.colorClass}>{currentStatus.label.split(' (')[0]}</span>
         {isUpdating ? (
           <Loader2 size={12} className="animate-spin text-slate-400" />
         ) : (
@@ -49,12 +50,17 @@ const StatusDropdown = ({ room, onStatusChange, isUpdating }) => {
             <button
               key={s.value}
               onClick={() => {
-                onStatusChange(room._id, s.value);
                 setIsOpen(false);
+                if (s.needsDates) {
+                  onBlockRequest(room, s.value);
+                } else {
+                  onStatusChange(room._id, s.value);
+                }
               }}
               className={`w-full text-left px-3 py-2 text-xs hover:bg-white/5 transition-colors ${room.status === s.value ? 'bg-white/10 font-bold' : ''} ${s.colorClass}`}
             >
-              {s.label}
+              <span>{s.label.split(' (')[0]}</span>
+              {s.needsDates && <span className="ml-1 text-[9px] opacity-50">(pick dates)</span>}
             </button>
           ))}
         </div>
@@ -66,6 +72,7 @@ const StatusDropdown = ({ room, onStatusChange, isUpdating }) => {
 const RoomMatrix = () => {
   const [roomTypes, setRoomTypes] = useState([]);
   const [rooms, setRooms] = useState([]);
+  const [roomBlocks, setRoomBlocks] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   
   const [showGenerateModal, setShowGenerateModal] = useState(false);
@@ -81,18 +88,26 @@ const RoomMatrix = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [updatingStatusId, setUpdatingStatusId] = useState(null);
 
+  // Block (maintenance/cleaning) with date range
+  const [blockRequest, setBlockRequest] = useState(null); // { room, reason }
+  const [blockForm, setBlockForm] = useState({ startDate: '', endDate: '', notes: '' });
+  const [isSavingBlock, setIsSavingBlock] = useState(false);
+  const [deletingBlockId, setDeletingBlockId] = useState(null);
+
   useEffect(() => {
     fetchData();
   }, []);
 
   const fetchData = async () => {
     try {
-      const [typesRes, roomsRes] = await Promise.all([
+      const [typesRes, roomsRes, blocksRes] = await Promise.all([
         api.get('/admin/room-types'),
-        api.get('/admin/rooms')
+        api.get('/admin/rooms'),
+        api.get('/admin/room-blocks')
       ]);
       setRoomTypes(typesRes.data);
       setRooms(roomsRes.data);
+      setRoomBlocks(blocksRes.data);
     } catch (error) {
       toast.error('Failed to load matrix data');
     } finally {
@@ -119,12 +134,68 @@ const RoomMatrix = () => {
     setUpdatingStatusId(roomId);
     try {
       const res = await api.put(`/admin/rooms/${roomId}/status`, { status: newStatus });
-      setRooms(rooms.map(r => r._id === roomId ? res.data : r));
+      setRooms(prev => prev.map(r => r._id === roomId ? res.data : r));
       toast.success('Room status updated');
+      fetchData(); // refresh full data to ensure matrix is in sync
     } catch (error) {
       toast.error('Failed to update status');
     } finally {
       setUpdatingStatusId(null);
+    }
+  };
+
+  const handleBlockRequest = (room, reason) => {
+    // Use local date string (YYYY-MM-DD) not UTC
+    const today = new Date();
+    const localDateStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+    setBlockRequest({ room, reason });
+    setBlockForm({ startDate: localDateStr, endDate: localDateStr, notes: '' });
+  };
+
+  const handleConfirmBlock = async () => {
+    if (!blockRequest) return;
+    if (!blockForm.startDate || !blockForm.endDate) return toast.error('Please select both dates');
+    setIsSavingBlock(true);
+    try {
+      await api.post('/admin/room-blocks', {
+        roomId: blockRequest.room._id,
+        roomTypeId: blockRequest.room.roomTypeId?._id || blockRequest.room.roomTypeId,
+        startDate: blockForm.startDate,
+        endDate: blockForm.endDate,
+        reason: blockRequest.reason,
+        notes: blockForm.notes
+      });
+      toast.success(`Room ${blockRequest.room.roomNumber} scheduled for ${blockRequest.reason}`);
+      setBlockRequest(null);
+      fetchData();
+    } catch (error) {
+      toast.error('Failed to block room');
+    } finally {
+      setIsSavingBlock(false);
+    }
+  };
+
+  const getBlocksForRoomToday = (roomId) => {
+    const rId = String(roomId);
+    return roomBlocks.filter(b => {
+      const bRoomId = String(b.roomId?._id || b.roomId);
+      if (bRoomId !== rId) return false;
+      const bStart = toLocalDateStr(b.startDate);
+      const bEnd = toLocalDateStr(b.endDate);
+      return todayStr >= bStart && todayStr <= bEnd;
+    });
+  };
+
+  const handleDeleteBlock = async (blockId) => {
+    setDeletingBlockId(blockId);
+    try {
+      await api.delete(`/admin/room-blocks/${blockId}`);
+      toast.success('Block removed successfully');
+      fetchData();
+    } catch {
+      toast.error('Failed to remove block');
+    } finally {
+      setDeletingBlockId(null);
     }
   };
 
@@ -177,6 +248,36 @@ const RoomMatrix = () => {
     }
   };
 
+  const toLocalDateStr = (d) => {
+    const dt = new Date(d);
+    return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+  };
+
+  const todayStr = toLocalDateStr(new Date());
+
+  const isRoomBlockedToday = (roomId) => {
+    const rId = String(roomId);
+    return roomBlocks.some(b => {
+      const bRoomId = String(b.roomId?._id || b.roomId);
+      if (bRoomId !== rId) return false;
+      const bStart = toLocalDateStr(b.startDate);
+      const bEnd = toLocalDateStr(b.endDate);
+      return todayStr >= bStart && todayStr <= bEnd;
+    });
+  };
+
+  const getBlockReasonToday = (roomId) => {
+    const rId = String(roomId);
+    const block = roomBlocks.find(b => {
+      const bRoomId = String(b.roomId?._id || b.roomId);
+      if (bRoomId !== rId) return false;
+      const bStart = toLocalDateStr(b.startDate);
+      const bEnd = toLocalDateStr(b.endDate);
+      return todayStr >= bStart && todayStr <= bEnd;
+    });
+    return block?.reason || 'blocked';
+  };
+
   if (isLoading) return <div className="text-slate-400 p-8">Loading matrix...</div>;
 
   return (
@@ -203,8 +304,15 @@ const RoomMatrix = () => {
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
-            {rooms.map(room => (
-              <div key={room._id} className={`relative p-4 rounded-xl border flex flex-col items-center justify-center text-center transition-all group ${getStatusColor(room.status)}`}>
+            {rooms.map(room => {
+              const blocked = isRoomBlockedToday(room._id);
+              const blockReason = blocked ? getBlockReasonToday(room._id) : null;
+              const effectiveStatus = blocked ? 'blocked' : room.status;
+              const cardColor = blocked
+                ? 'bg-orange-500/10 text-orange-400 border-orange-500/30'
+                : getStatusColor(room.status);
+              return (
+              <div key={room._id} className={`relative p-3 rounded-xl border flex flex-col items-center justify-center text-center transition-all group ${cardColor}`}>
                 <button 
                   onClick={() => handleDeleteRoom(room._id, room.roomNumber)}
                   className="absolute top-2 right-2 text-red-400 hover:text-red-300 opacity-0 group-hover:opacity-100 transition-opacity bg-black/40 p-1 rounded-md"
@@ -212,18 +320,95 @@ const RoomMatrix = () => {
                 >
                   <Trash2 size={14} />
                 </button>
+                {blocked && (
+                  <div className="absolute top-2 left-2" title={`Blocked: ${blockReason}`}>
+                    <ShieldAlert size={14} className="text-orange-400" />
+                  </div>
+                )}
                 <DoorOpen size={24} className="mb-2 opacity-80" />
                 <span className="text-lg font-black">{room.roomNumber}</span>
                 <span className="text-[10px] font-bold uppercase tracking-wider opacity-80 truncate w-full mt-1">
                   {room.roomTypeId?.name || 'Unknown'}
                 </span>
-                
-                <StatusDropdown room={room} onStatusChange={handleStatusChange} isUpdating={updatingStatusId === room._id} />
+                {blocked ? (
+                  <div className="mt-2 w-full flex flex-col items-center gap-1.5">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-orange-400 bg-orange-500/10 px-2 py-0.5 rounded-full border border-orange-500/30">
+                      {blockReason.replace('_', ' ')}
+                    </span>
+                    {getBlocksForRoomToday(room._id).map(b => (
+                      <button
+                        key={b._id}
+                        onClick={() => handleDeleteBlock(b._id)}
+                        disabled={deletingBlockId === b._id}
+                        className="flex items-center gap-1 text-[9px] font-bold text-rose-400 hover:text-white bg-rose-500/10 hover:bg-rose-500/30 border border-rose-500/30 px-2 py-0.5 rounded-full transition-all w-full justify-center"
+                        title={`Remove block: ${new Date(b.startDate).toLocaleDateString()} – ${new Date(b.endDate).toLocaleDateString()}`}
+                      >
+                        {deletingBlockId === b._id 
+                          ? <Loader2 size={10} className="animate-spin" /> 
+                          : <X size={10} />}
+                        Unblock
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <StatusDropdown room={room} onStatusChange={handleStatusChange} onBlockRequest={handleBlockRequest} isUpdating={updatingStatusId === room._id} />
+                )}
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
+
+      {/* Block Date-Range Modal (Maintenance / Cleaning) */}
+      {blockRequest && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setBlockRequest(null)}>
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+          <div className="relative bg-[#13151a] border border-white/10 rounded-2xl p-8 max-w-md w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setBlockRequest(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors">
+              <X size={24} />
+            </button>
+            <div className="mb-6">
+              <h3 className="text-xl font-bold text-white capitalize">{blockRequest.reason} — Room {blockRequest.room.roomNumber}</h3>
+              <p className="text-sm text-slate-400 mt-1">Select the date range for this {blockRequest.reason} period. The room will be blocked in the Availability Calendar and excluded from new bookings.</p>
+            </div>
+            <div className="space-y-5">
+              <DatePicker
+                label="Start Date"
+                selected={blockForm.startDate}
+                onChange={v => setBlockForm(p => ({ ...p, startDate: v }))}
+              />
+              <DatePicker
+                label="End Date"
+                selected={blockForm.endDate}
+                onChange={v => setBlockForm(p => ({ ...p, endDate: v }))}
+              />
+              <div>
+                <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1.5 tracking-wider">Notes (optional)</label>
+                <textarea
+                  value={blockForm.notes}
+                  onChange={e => setBlockForm(p => ({ ...p, notes: e.target.value }))}
+                  placeholder={`e.g. Scheduled ${blockRequest.reason} in bathroom`}
+                  rows={2}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-orange-500 transition-colors resize-none"
+                />
+              </div>
+              <button
+                onClick={handleConfirmBlock}
+                disabled={isSavingBlock}
+                className={`w-full flex items-center justify-center gap-2 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg disabled:opacity-60 ${
+                  blockRequest.reason === 'maintenance'
+                    ? 'bg-red-600 hover:bg-red-700 shadow-red-500/20'
+                    : 'bg-amber-600 hover:bg-amber-700 shadow-amber-500/20'
+                }`}
+              >
+                {isSavingBlock ? <Loader2 size={18} className="animate-spin" /> : <ShieldAlert size={18} />}
+                {isSavingBlock ? 'Saving...' : `Schedule ${blockRequest.reason.charAt(0).toUpperCase() + blockRequest.reason.slice(1)}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Generate Modal */}
       {showGenerateModal && (

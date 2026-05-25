@@ -4,6 +4,7 @@ const Room = require('../models/Room');
 const User = require('../models/User');
 const RatePlan = require('../models/RatePlan');
 const Booking = require('../models/Booking');
+const RoomBlock = require('../models/RoomBlock');
 const bcrypt = require('bcrypt');
 
 // @desc    Get Hotel Profile
@@ -282,3 +283,55 @@ exports.deleteRoom = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+// @desc    Get Room Blocks
+// @route   GET /api/admin/room-blocks
+// @access  Private/Admin
+exports.getRoomBlocks = async (req, res) => {
+  try {
+    const blocks = await RoomBlock.find({ hotelId: req.user.hotelId })
+      .populate('roomId', 'roomNumber')
+      .populate('roomTypeId', 'name');
+    res.json(blocks);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Create Room Block
+// @route   POST /api/admin/room-blocks
+// @access  Private/Admin
+exports.createRoomBlock = async (req, res) => {
+  try {
+    const { roomId, roomTypeId, startDate, endDate, reason, notes } = req.body;
+    const block = await RoomBlock.create({
+      hotelId: req.user.hotelId,
+      roomId,
+      roomTypeId,
+      startDate: new Date(startDate),
+      endDate: new Date(endDate),
+      reason,
+      notes
+    });
+    const populated = await RoomBlock.findById(block._id)
+      .populate('roomId', 'roomNumber')
+      .populate('roomTypeId', 'name');
+    res.status(201).json(populated);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Delete Room Block
+// @route   DELETE /api/admin/room-blocks/:id
+// @access  Private/Admin
+exports.deleteRoomBlock = async (req, res) => {
+  try {
+    const block = await RoomBlock.findOneAndDelete({ _id: req.params.id, hotelId: req.user.hotelId });
+    if (!block) return res.status(404).json({ message: 'Block not found' });
+    res.json({ message: 'Room block removed' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
