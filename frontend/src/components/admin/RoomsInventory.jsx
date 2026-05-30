@@ -16,7 +16,7 @@ const RoomsInventory = () => {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [activeTab]);
 
   const fetchData = async () => {
     try {

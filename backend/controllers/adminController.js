@@ -5,6 +5,8 @@ const User = require('../models/User');
 const RatePlan = require('../models/RatePlan');
 const Booking = require('../models/Booking');
 const RoomBlock = require('../models/RoomBlock');
+const ExtraService = require('../models/ExtraService');
+const Payment = require('../models/Payment');
 const bcrypt = require('bcrypt');
 
 // @desc    Get Hotel Profile
@@ -171,14 +173,14 @@ exports.getBookings = async (req, res) => {
 exports.createBooking = async (req, res) => {
   try {
     const booking = await Booking.create({ ...req.body, hotelId: req.user.hotelId });
-    
+
     // Auto-update room status to occupied
     await Room.findOneAndUpdate(
       { _id: req.body.roomId, hotelId: req.user.hotelId },
       { status: 'occupied' },
       { returnDocument: 'after' }
     );
-    
+
     const populatedBooking = await Booking.findById(booking._id).populate('roomId', 'roomNumber');
     res.status(201).json(populatedBooking);
   } catch (error) {
@@ -196,16 +198,16 @@ exports.updateBookingStatus = async (req, res) => {
       { status: req.body.status, paymentStatus: req.body.paymentStatus },
       { returnDocument: 'after' }
     ).populate('roomId', 'roomNumber');
-    
+
     // If cancelled or checked-out, free the room
     if (['cancelled', 'checked-out'].includes(req.body.status)) {
-       await Room.findOneAndUpdate(
-         { _id: booking.roomId._id, hotelId: req.user.hotelId },
-         { status: 'available' },
-         { returnDocument: 'after' }
-       );
+      await Room.findOneAndUpdate(
+        { _id: booking.roomId._id, hotelId: req.user.hotelId },
+        { status: 'available' },
+        { returnDocument: 'after' }
+      );
     }
-    
+
     res.json(booking);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -345,13 +347,13 @@ exports.getRoomRack = async (req, res) => {
     if (!startDate || !endDate) return res.status(400).json({ message: 'startDate and endDate are required' });
     const start = new Date(startDate);
     const end = new Date(endDate);
-    
+
     const roomTypes = await RoomType.find({ hotelId: req.user.hotelId }).lean();
     const rooms = await Room.find({ hotelId: req.user.hotelId }).lean();
-    
+
     const bookings = await Booking.find({
       hotelId: req.user.hotelId,
-      status: { $in: ['confirmed', 'checked-in'] },
+      status: { $in: ['confirmed', 'checked-in', 'checked-out'] },
       $or: [
         { checkInDate: { $lte: end }, checkOutDate: { $gt: start } }
       ]
@@ -402,13 +404,13 @@ exports.searchRackBookings = async (req, res) => {
     if (!q) return res.status(400).json({ message: 'Search query is required' });
     const hotelId = req.user.hotelId;
     const regex = new RegExp(q, 'i');
-    
+
     const matchingRooms = await Room.find({ hotelId, roomNumber: regex }).select('_id').lean();
     const roomIds = matchingRooms.map(r => r._id);
 
     const bookings = await Booking.find({
       hotelId,
-      status: { $in: ['confirmed', 'checked-in'] },
+      status: { $in: ['confirmed', 'checked-in', 'checked-out'] },
       $or: [
         { guestName: regex },
         { guestContact: regex },
@@ -428,6 +430,341 @@ exports.searchRackBookings = async (req, res) => {
   } catch (error) { res.status(500).json({ message: error.message }); }
 };
 
+// Helper to update booking totals based on extra services and payments
+// Helper to distribute and update totals for a group booking
+const recalculateGroupBookingTotals = async (bookingGroupId, hotelId) => {
+  if (!bookingGroupId) return;
+
+  const bookings = await Booking.find({ bookingGroupId, hotelId }).sort({ createdAt: 1 });
+  if (bookings.length === 0) return;
+
+  const bookingIds = bookings.map(b => b._id);
+
+  // 1. Auto-seed initial legacy payments to Payment collection if no payments exist
+  const paymentsCount = await Payment.countDocuments({ bookingId: { $in: bookingIds } });
+  const totalLegacyPaid = bookings.reduce((sum, b) => sum + (b.paidAmount || 0), 0);
+
+  if (paymentsCount === 0 && totalLegacyPaid > 0) {
+    // Seed a real Payment document under the first booking in the group
+    await Payment.create({
+      bookingId: bookings[0]._id,
+      hotelId: hotelId,
+      paymentType: bookings[0].paymentMethod || 'Cash',
+      additionType: 'Default',
+      amount: totalLegacyPaid,
+      paymentDate: bookings[0].createdAt || new Date(),
+      referenceText: 'Initial Payment (From Reservation)'
+    });
+  }
+
+  // 2. Fetch all services and payments for the group
+  const services = await ExtraService.find({ bookingId: { $in: bookingIds } });
+  const payments = await Payment.find({ bookingId: { $in: bookingIds } });
+
+  const totalPayments = payments.reduce((sum, p) => {
+    if (p.additionType === 'Refund') return sum - (p.amount || 0);
+    return sum + (p.amount || 0);
+  }, 0);
+
+  // Use the total payments (including the seeded initial payment)
+  let groupPaidAmount = totalPayments;
+
+  // 3. Evaluate totalAmount for each individual booking in the group
+  let updatedBookings = [];
+  for (const b of bookings) {
+    const bServices = services.filter(s => s.bookingId.toString() === b._id.toString());
+    const bServicesTotal = bServices.reduce((sum, s) => sum + (s.grandTotal || 0), 0);
+    const baseAmount = (b.cost || 0) + (b.gst || 0) - (b.discount || 0);
+    const bTotalAmount = baseAmount + bServicesTotal;
+    updatedBookings.push({
+      _id: b._id,
+      totalAmount: bTotalAmount,
+      paidAmount: 0,
+      pendingAmount: bTotalAmount,
+      paymentStatus: 'pending'
+    });
+  }
+
+  // 4. Distribute the group's total paid amount across bookings
+  let remainingPaid = groupPaidAmount;
+  for (let ub of updatedBookings) {
+    if (remainingPaid <= 0) {
+      ub.paidAmount = 0;
+      ub.pendingAmount = ub.totalAmount;
+      ub.paymentStatus = 'pending';
+    } else if (remainingPaid >= ub.totalAmount) {
+      ub.paidAmount = ub.totalAmount;
+      ub.pendingAmount = 0;
+      ub.paymentStatus = 'paid';
+      remainingPaid -= ub.totalAmount;
+    } else {
+      ub.paidAmount = remainingPaid;
+      ub.pendingAmount = ub.totalAmount - remainingPaid;
+      ub.paymentStatus = 'partial';
+      remainingPaid = 0;
+    }
+  }
+
+  // Allocate any overpayment (positive balance) to the first booking in the group
+  if (remainingPaid > 0 && updatedBookings.length > 0) {
+    updatedBookings[0].paidAmount += remainingPaid;
+    updatedBookings[0].pendingAmount = 0;
+    updatedBookings[0].paymentStatus = 'paid';
+  }
+
+  // 5. Update each booking in the database
+  for (const ub of updatedBookings) {
+    await Booking.findOneAndUpdate(
+      { _id: ub._id, hotelId },
+      { 
+        totalAmount: ub.totalAmount,
+        paidAmount: ub.paidAmount,
+        pendingAmount: ub.pendingAmount,
+        paymentStatus: ub.paymentStatus
+      }
+    );
+  }
+};
+
+// Helper to update booking totals based on extra services and payments
+const recalculateBookingTotals = async (bookingId, hotelId) => {
+  const booking = await Booking.findOne({ _id: bookingId, hotelId });
+  if (!booking) return;
+
+  if (booking.bookingGroupId) {
+    await recalculateGroupBookingTotals(booking.bookingGroupId, hotelId);
+  } else {
+    // 1. Auto-seed initial legacy payments if no payments exist
+    const paymentsCount = await Payment.countDocuments({ bookingId });
+    if (paymentsCount === 0 && booking.paidAmount > 0) {
+      await Payment.create({
+        bookingId: booking._id,
+        hotelId: hotelId,
+        paymentType: booking.paymentMethod || 'Cash',
+        additionType: 'Default',
+        amount: booking.paidAmount,
+        paymentDate: booking.createdAt || new Date(),
+        referenceText: 'Initial Payment (From Reservation)'
+      });
+    }
+
+    // 2. Fetch all services and payments for this single booking
+    const services = await ExtraService.find({ bookingId });
+    const servicesTotal = services.reduce((sum, s) => sum + (s.grandTotal || 0), 0);
+
+    const payments = await Payment.find({ bookingId });
+    const totalPaid = payments.reduce((sum, p) => {
+      if (p.additionType === 'Refund') return sum - (p.amount || 0);
+      return sum + (p.amount || 0);
+    }, 0);
+
+    const baseAmount = (booking.cost || 0) + (booking.gst || 0) - (booking.discount || 0);
+    const newTotal = baseAmount + servicesTotal;
+    const newPending = Math.max(0, newTotal - totalPaid);
+
+    let paymentStatus = 'pending';
+    if (totalPaid >= newTotal && newTotal > 0) {
+      paymentStatus = 'paid';
+    } else if (totalPaid > 0) {
+      paymentStatus = 'partial';
+    }
+
+    await Booking.findOneAndUpdate(
+      { _id: bookingId, hotelId },
+      { 
+        totalAmount: newTotal,
+        paidAmount: totalPaid, 
+        pendingAmount: newPending,
+        paymentStatus
+      }
+    );
+  }
+};
+
+// @desc    Add Extra Service
+// @route   POST /api/admin/bookings/:id/services
+// @access  Private/Admin
+exports.addExtraService = async (req, res) => {
+  try {
+    const bookingId = req.params.id;
+    const hotelId = req.user.hotelId;
+    const { name, amountWithoutTax, taxName, taxAmount, discount, date, referenceText } = req.body;
+    
+    const amt = Number(amountWithoutTax || 0);
+    const tax = Number(taxAmount || 0);
+    const disc = Number(discount || 0);
+    const grandTotal = amt + tax - disc;
+
+    const extraService = await ExtraService.create({
+      bookingId,
+      hotelId,
+      name,
+      amountWithoutTax: amt,
+      taxName,
+      taxAmount: tax,
+      discount: disc,
+      referenceText,
+      date: date ? new Date(date) : new Date(),
+      grandTotal
+    });
+
+    await recalculateBookingTotals(bookingId, hotelId);
+
+    res.status(201).json(extraService);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Delete Extra Service
+// @route   DELETE /api/admin/services/:id
+// @access  Private/Admin
+exports.deleteExtraService = async (req, res) => {
+  try {
+    const serviceId = req.params.id;
+    const hotelId = req.user.hotelId;
+
+    const service = await ExtraService.findOne({ _id: serviceId, hotelId });
+    if (!service) return res.status(404).json({ message: 'Service not found' });
+
+    const bookingId = service.bookingId;
+    await ExtraService.findOneAndDelete({ _id: serviceId, hotelId });
+
+    await recalculateBookingTotals(bookingId, hotelId);
+
+    res.json({ message: 'Service removed successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Add Payment Folio
+// @route   POST /api/admin/bookings/:id/payments
+// @access  Private/Admin
+exports.addPaymentFolio = async (req, res) => {
+  try {
+    const bookingId = req.params.id;
+    const hotelId = req.user.hotelId;
+    const { paymentType, additionType, amount, paymentDate, referenceText } = req.body;
+
+    const payment = await Payment.create({
+      bookingId,
+      hotelId,
+      paymentType,
+      additionType: additionType || 'Default',
+      amount: Number(amount || 0),
+      paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
+      referenceText
+    });
+
+    await recalculateBookingTotals(bookingId, hotelId);
+
+    res.status(201).json(payment);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Delete Payment Folio
+// @route   DELETE /api/admin/payments/:id
+// @access  Private/Admin
+exports.deletePaymentFolio = async (req, res) => {
+  try {
+    const paymentId = req.params.id;
+    const hotelId = req.user.hotelId;
+
+    if (paymentId && paymentId.startsWith('initial-pay-')) {
+      const actualBookingId = paymentId.replace('initial-pay-', '');
+      const booking = await Booking.findOne({ _id: actualBookingId, hotelId });
+      if (booking) {
+        await Booking.findOneAndUpdate(
+          { _id: actualBookingId, hotelId },
+          { paidAmount: 0 }
+        );
+        await recalculateBookingTotals(actualBookingId, hotelId);
+        return res.json({ message: 'Initial payment removed successfully' });
+      } else {
+        return res.status(404).json({ message: 'Booking not found' });
+      }
+    }
+
+    const payment = await Payment.findOne({ _id: paymentId, hotelId });
+    if (!payment) return res.status(404).json({ message: 'Payment not found' });
+
+    const bookingId = payment.bookingId;
+    const booking = await Booking.findOne({ _id: bookingId, hotelId });
+    
+    let bookingIds = [bookingId];
+    if (booking && booking.bookingGroupId) {
+      const groupBookings = await Booking.find({ bookingGroupId: booking.bookingGroupId, hotelId });
+      bookingIds = groupBookings.map(gb => gb._id);
+    }
+
+    await Payment.findOneAndDelete({ _id: paymentId, hotelId });
+
+    // Prevent auto-seed loop: if no payments are left for single/group, zero out database paidAmount first
+    const remainingCount = await Payment.countDocuments({ bookingId: { $in: bookingIds } });
+    if (remainingCount === 0) {
+      await Booking.updateMany(
+        { _id: { $in: bookingIds }, hotelId },
+        { paidAmount: 0 }
+      );
+    }
+
+    await recalculateBookingTotals(bookingId, hotelId);
+
+    res.json({ message: 'Payment removed successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Process Checkout for Booking
+// @route   PUT /api/admin/bookings/:id/checkout
+// @access  Private/Admin
+exports.processCheckout = async (req, res) => {
+  try {
+    const bookingId = req.params.id;
+    const hotelId = req.user.hotelId;
+    const { haveGst, onDutyManager, departureDateTime, checkoutComment, markRoomTo, emailInvoiceToGuest } = req.body;
+
+    const booking = await Booking.findOne({ _id: bookingId, hotelId });
+    if (!booking) return res.status(404).json({ message: 'Booking not found' });
+
+    // Update checkout details on the booking
+    booking.status = 'checked-out';
+    booking.haveGst = haveGst || 'No';
+    booking.onDutyManager = onDutyManager;
+    booking.departureDateTime = departureDateTime ? new Date(departureDateTime) : new Date();
+    booking.checkoutComment = checkoutComment;
+    booking.markRoomTo = markRoomTo || 'Dirty';
+    booking.emailInvoiceToGuest = emailInvoiceToGuest || 'No';
+
+    await booking.save();
+
+    // Map selected physical room status
+    // "Dirty" or "Cleaning" -> 'cleaning', "Available" -> 'available', "Maintenance" -> 'maintenance'
+    let targetRoomStatus = 'cleaning';
+    if (markRoomTo === 'Available') {
+      targetRoomStatus = 'available';
+    } else if (markRoomTo === 'Maintenance') {
+      targetRoomStatus = 'maintenance';
+    }
+
+    // Free the room
+    if (booking.roomId) {
+      await Room.findOneAndUpdate(
+        { _id: booking.roomId, hotelId },
+        { status: targetRoomStatus }
+      );
+    }
+
+    res.json(booking);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // @desc    Get Detailed Booking Information
 // @route   GET /api/admin/bookings/:id/details
 // @access  Private/Admin
@@ -436,19 +773,71 @@ exports.getBookingDetails = async (req, res) => {
     const bookingId = req.params.id;
     const hotelId = req.user.hotelId;
     
-    const booking = await Booking.findOne({ _id: bookingId, hotelId }).populate('roomId', 'roomNumber name').populate('hotelId', 'name').lean();
+    // Automatically recalculate totals on fetch to heal any legacy/stale booking states
+    await recalculateBookingTotals(bookingId, hotelId);
+    
+    const booking = await Booking.findOne({ _id: bookingId, hotelId })
+      .populate('roomId', 'roomNumber name roomTypeId status')
+      .populate('hotelId', 'name')
+      .lean();
     if (!booking) return res.status(404).json({ message: 'Booking not found' });
+    
+    // Fetch all bookings in the same group (if any)
+    let groupBookings = [];
+    let bookingIds = [bookingId];
+    if (booking.bookingGroupId) {
+      groupBookings = await Booking.find({ bookingGroupId: booking.bookingGroupId, hotelId })
+        .populate({
+          path: 'roomId',
+          select: 'roomNumber roomTypeId status',
+          populate: { path: 'roomTypeId', select: 'name' }
+        })
+        .lean();
+      bookingIds = groupBookings.map(gb => gb._id);
+    } else {
+      const populated = await Booking.findById(booking._id)
+        .populate({
+          path: 'roomId',
+          select: 'roomNumber roomTypeId status',
+          populate: { path: 'roomTypeId', select: 'name' }
+        })
+        .lean();
+      groupBookings = [populated];
+    }
+
+    // Fetch all rooms to allow changing rooms in dropdowns
+    const allRooms = await Room.find({ hotelId })
+      .populate('roomTypeId', 'name')
+      .lean();
+      
+    // Fetch all extra services for the group (or single booking)
+    const services = await ExtraService.find({ bookingId: { $in: bookingIds } }).lean();
     
     const checkInDetails = (booking.status === 'checked-in' || booking.status === 'checked-out') ? {
       status: 'completed', time: booking.arrivalTime || booking.updatedAt, assignedRoom: booking.roomId?.roomNumber || 'N/A', notes: booking.internalNotes || '', idVerified: !!booking.idProofNumber
     } : null;
     const checkOutDetails = (booking.status === 'checked-out') ? {
-      status: 'completed', time: booking.updatedAt, settlementStatus: booking.paymentStatus === 'paid' ? 'Settled' : 'Pending Balance'
+      status: 'completed',
+      time: booking.departureDateTime || booking.updatedAt,
+      settlementStatus: booking.paymentStatus === 'paid' ? 'Settled' : 'Pending Balance',
+      haveGst: booking.haveGst || 'No',
+      onDutyManager: booking.onDutyManager || 'N/A',
+      checkoutComment: booking.checkoutComment || '',
+      markRoomTo: booking.markRoomTo || 'Dirty',
+      emailInvoiceToGuest: booking.emailInvoiceToGuest || 'No'
     } : null;
     
-    const payments = [];
-    if (booking.paidAmount > 0) payments.push({ id: `pay-${booking._id}`, date: booking.createdAt, method: booking.paymentMethod || 'Cash', amount: booking.paidAmount, transactionId: booking.paymentReference || 'N/A' });
+    // Fetch all payments for the group (or single booking)
+    const payments = await Payment.find({ bookingId: { $in: bookingIds } }).lean();
     
-    res.json({ booking, payments, services: [], checkInDetails, checkOutDetails });
+    res.json({ 
+      booking, 
+      payments, 
+      services, 
+      checkInDetails, 
+      checkOutDetails,
+      groupBookings,
+      allRooms
+    });
   } catch (error) { res.status(500).json({ message: error.message }); }
 };

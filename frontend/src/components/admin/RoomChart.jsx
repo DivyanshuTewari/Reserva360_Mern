@@ -21,18 +21,43 @@ const RoomChart = () => {
   // Drawer State
   const [drawerBookingId, setDrawerBookingId] = useState(null);
 
-  const [startDate, setStartDate] = useState(new Date());
+  const [startDate, setStartDate] = useState(() => {
+    const saved = localStorage.getItem('reserva_roomchart_startdate');
+    if (saved && saved !== 'undefined' && saved !== 'null') {
+      const parsed = new Date(saved);
+      if (!isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+    return new Date();
+  });
   const [endDate, setEndDate] = useState(() => {
-    const date = new Date();
+    const savedStart = localStorage.getItem('reserva_roomchart_startdate');
+    let date = new Date();
+    if (savedStart && savedStart !== 'undefined' && savedStart !== 'null') {
+      const parsed = new Date(savedStart);
+      if (!isNaN(parsed.getTime())) {
+        date = parsed;
+      }
+    }
     date.setDate(date.getDate() + 14); 
     return date;
   });
 
+  useEffect(() => {
+    if (startDate && !isNaN(startDate.getTime())) {
+      localStorage.setItem('reserva_roomchart_startdate', startDate.toISOString());
+    }
+  }, [startDate]);
+
   const fetchRackData = useCallback(async () => {
     try {
       setIsLoading(true);
-      const startStr = startDate.toISOString().split('T')[0];
-      const endStr = endDate.toISOString().split('T')[0];
+      const safeStart = (startDate && !isNaN(startDate.getTime())) ? startDate : new Date();
+      const safeEnd = (endDate && !isNaN(endDate.getTime())) ? endDate : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+      
+      const startStr = safeStart.toISOString().split('T')[0];
+      const endStr = safeEnd.toISOString().split('T')[0];
       
       const response = await api.get(`/admin/room-rack?startDate=${startStr}&endDate=${endStr}`);
       setCategories(response.data.categories || []);
@@ -209,7 +234,9 @@ const RoomChart = () => {
       const isWeekend = currentIterDate.getDay() === 0 || currentIterDate.getDay() === 6;
       
       const booking = bookings.find(b => {
-        if (b.roomId !== room._id) return false;
+        const bRoomId = b.roomId?._id || b.roomId;
+        if (!bRoomId || !room._id) return false;
+        if (bRoomId.toString() !== room._id.toString()) return false;
         const bIn = normalizeDate(b.checkInDate);
         const bOut = normalizeDate(b.checkOutDate);
         if (bIn.getTime() === currentIterDate.getTime()) return true;
@@ -218,7 +245,9 @@ const RoomChart = () => {
       });
 
       const block = blocks.find(b => {
-        if (b.roomId !== room._id) return false;
+        const bRoomId = b.roomId?._id || b.roomId;
+        if (!bRoomId || !room._id) return false;
+        if (bRoomId.toString() !== room._id.toString()) return false;
         const bIn = normalizeDate(b.startDate);
         const bOut = normalizeDate(b.endDate); 
         if (bIn.getTime() === currentIterDate.getTime()) return true;
@@ -386,9 +415,9 @@ const RoomChart = () => {
           </button>
           
           <div className="flex items-center px-2 text-sm font-bold text-slate-700 whitespace-nowrap">
-            {startDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} 
+            {(startDate && !isNaN(startDate.getTime())) ? startDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : 'N/A'} 
             <span className="mx-2 text-slate-400 font-normal">to</span> 
-            {endDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+            {(endDate && !isNaN(endDate.getTime())) ? endDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : 'N/A'}
           </div>
           
           <button onClick={handleNextDays} className="p-1 hover:bg-slate-200 rounded text-slate-700 transition-colors">
@@ -508,7 +537,11 @@ const RoomChart = () => {
       {/* Booking Details Drawer */}
       <BookingDetailsDrawer 
         bookingId={drawerBookingId} 
-        onClose={() => setDrawerBookingId(null)} 
+        onClose={() => {
+          setDrawerBookingId(null);
+          fetchRackData();
+        }} 
+        onRefresh={fetchRackData}
       />
     </div>
   );

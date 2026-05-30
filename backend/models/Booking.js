@@ -48,7 +48,13 @@ const bookingSchema = new mongoose.Schema({
   idProofNumber: { type: String },
   nationality: { type: String, default: 'Indian' },
   arrivalTime: { type: String },
-  specialRequests: { type: String }
+  specialRequests: { type: String },
+  haveGst: { type: String, enum: ['Yes', 'No'], default: 'No' },
+  onDutyManager: { type: String },
+  departureDateTime: { type: Date },
+  checkoutComment: { type: String },
+  markRoomTo: { type: String, default: 'Dirty' },
+  emailInvoiceToGuest: { type: String, enum: ['Yes', 'No'], default: 'No' }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Booking', bookingSchema);

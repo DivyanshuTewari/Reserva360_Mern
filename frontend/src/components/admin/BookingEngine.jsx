@@ -492,7 +492,8 @@ const BookingEngine = () => {
       const datePart = new Date().toISOString().slice(0,10).replace(/-/g, '');
       const randomPart = Math.random().toString(36).substring(2, 6).toUpperCase();
       const bookingGroupId = `BKG-${datePart}-${randomPart}`;
-      for (const room of selectedRooms) {
+      for (let index = 0; index < selectedRooms.length; index++) {
+        const room = selectedRooms[index];
         await api.post('/admin/bookings', {
           roomId: room.roomId,
           guestName: guestDetails.guestName,
@@ -520,8 +521,8 @@ const BookingEngine = () => {
           paymentMethod: paymentDetails.paymentMethod,
           paymentReference: paymentDetails.paymentReference,
           internalNotes: paymentDetails.internalNotes,
-          paidAmount: paymentDetails.amountPaid,
-          pendingAmount: Math.max(0, payableAmount - paymentDetails.amountPaid),
+          paidAmount: index === 0 ? Number(paymentDetails.amountPaid || 0) : 0,
+          pendingAmount: Math.max(0, room.total - (index === 0 ? Number(paymentDetails.amountPaid || 0) : 0)),
           bookingGroupId,
           adults: room.adults || 2,
           children: room.children || 0,
