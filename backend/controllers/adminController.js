@@ -193,9 +193,29 @@ exports.createBooking = async (req, res) => {
 // @access  Private/Admin
 exports.updateBookingStatus = async (req, res) => {
   try {
+    const updateData = { status: req.body.status };
+    if (req.body.paymentStatus !== undefined) {
+      updateData.paymentStatus = req.body.paymentStatus;
+    }
+
+    // Optional check-in guest details
+    const optionalFields = [
+      'comingFrom',
+      'goingTo',
+      'vehicleNumber',
+      'idProofType',
+      'idProofNumber',
+      'nameAsPerIdProof'
+    ];
+    optionalFields.forEach(field => {
+      if (req.body[field] !== undefined) {
+        updateData[field] = req.body[field];
+      }
+    });
+
     const booking = await Booking.findOneAndUpdate(
       { _id: req.params.id, hotelId: req.user.hotelId },
-      { status: req.body.status, paymentStatus: req.body.paymentStatus },
+      updateData,
       { returnDocument: 'after' }
     ).populate('roomId', 'roomNumber');
 
@@ -255,6 +275,7 @@ exports.updateBooking = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
 
 // @desc    Delete Booking
 // @route   DELETE /api/admin/bookings/:id

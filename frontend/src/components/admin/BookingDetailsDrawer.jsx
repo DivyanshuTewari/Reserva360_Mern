@@ -80,6 +80,17 @@ const BookingDetailsDrawer = ({ bookingId, onClose, onRefresh }) => {
   const [printTitle, setPrintTitle] = useState('Guest Invoice');
   const printVoucherRef = useRef(null);
 
+  const [showCheckInModal, setShowCheckInModal] = useState(false);
+  const [checkInForm, setCheckInForm] = useState({
+    comingFrom: '',
+    goingTo: '',
+    vehicleNumber: '',
+    idProofType: 'Aadhaar Card',
+    idProofNumber: '',
+    nameAsPerIdProof: ''
+  });
+
+
   useEffect(() => {
     if (data?.groupBookings) {
       const roomMap = {};
@@ -213,6 +224,40 @@ const BookingDetailsDrawer = ({ bookingId, onClose, onRefresh }) => {
       toast.error('Failed to remove check-in: ' + (error.response?.data?.message || error.message), { id: toastId });
     }
   };
+
+  const handleConfirmCheckIn = async () => {
+    setShowCheckInModal(false);
+    const toastId = toast.loading('Processing check-in...');
+    try {
+      const updates = [];
+      for (const gb of data.groupBookings) {
+        updates.push(
+          api.put(`/admin/bookings/${gb._id}/status`, { 
+            status: 'checked-in', 
+            paymentStatus: gb.paymentStatus,
+            comingFrom: checkInForm.comingFrom,
+            goingTo: checkInForm.goingTo,
+            vehicleNumber: checkInForm.vehicleNumber,
+            idProofType: checkInForm.idProofType,
+            idProofNumber: checkInForm.idProofNumber,
+            nameAsPerIdProof: checkInForm.nameAsPerIdProof
+          })
+        );
+        if (gb.roomId?._id) {
+          updates.push(
+            api.put(`/admin/rooms/${gb.roomId._id}/status`, { status: 'occupied' })
+          );
+        }
+      }
+      await Promise.all(updates);
+      toast.success('Guest checked in successfully!', { id: toastId });
+      await fetchDetails();
+      if (onRefresh) onRefresh();
+    } catch (error) {
+      toast.error('Failed to check in: ' + (error.response?.data?.message || error.message), { id: toastId });
+    }
+  };
+
 
   const handleAddService = async (e) => {
     e.preventDefault();
@@ -535,6 +580,15 @@ const BookingDetailsDrawer = ({ bookingId, onClose, onRefresh }) => {
                     <InfoRow label="Guest Type" value={b?.nationality === 'Foreigner' ? 'Foreigner' : 'Domestic'} />
                     <InfoRow label="Company Name" value={b?.companyName} />
                     <InfoRow label="Company GST" value={b?.companyGst} />
+
+                    <div className="border-t border-slate-200 my-2 pt-2"></div>
+                    <InfoRow label="Name As Per ID" value={b?.nameAsPerIdProof} />
+                    <InfoRow label="ID Proof Type" value={b?.idProofType} />
+                    <InfoRow label="ID Proof Number" value={b?.idProofNumber} />
+                    <InfoRow label="Vehicle Number" value={b?.vehicleNumber} />
+                    <InfoRow label="Coming From" value={b?.comingFrom} />
+                    <InfoRow label="Going To" value={b?.goingTo} />
+
                   </div>
                 </div>
 
@@ -735,33 +789,24 @@ const BookingDetailsDrawer = ({ bookingId, onClose, onRefresh }) => {
                   <div className="text-center py-5 text-slate-500 text-sm bg-slate-50 rounded border border-dashed border-slate-300">
                     Guest has not checked in yet.
                     <div className="mt-3">
+                      
                       <button 
-                        onClick={async () => {
-                          const toastId = toast.loading('Processing check-in...');
-                          try {
-                            const updates = [];
-                            for (const gb of data.groupBookings) {
-                              updates.push(
-                                api.put(`/admin/bookings/${gb._id}/status`, { status: 'checked-in', paymentStatus: gb.paymentStatus })
-                              );
-                              if (gb.roomId?._id) {
-                                updates.push(
-                                  api.put(`/admin/rooms/${gb.roomId._id}/status`, { status: 'occupied' })
-                                );
-                              }
-                            }
-                            await Promise.all(updates);
-                            toast.success('Guest checked in successfully!', { id: toastId });
-                            await fetchDetails();
-                            if (onRefresh) onRefresh();
-                          } catch (error) {
-                            toast.error('Failed to check in: ' + (error.response?.data?.message || error.message), { id: toastId });
-                          }
+                        onClick={() => {
+                          setCheckInForm({
+                            comingFrom: b?.comingFrom || '',
+                            goingTo: b?.goingTo || '',
+                            vehicleNumber: b?.vehicleNumber || '',
+                            idProofType: b?.idProofType || 'Aadhaar Card',
+                            idProofNumber: b?.idProofNumber || '',
+                            nameAsPerIdProof: b?.nameAsPerIdProof || b?.guestName || ''
+                          });
+                          setShowCheckInModal(true);
                         }}
                         className="px-4 py-1.5 bg-blue-600 text-white font-bold text-xs rounded hover:bg-blue-700 transition-colors shadow-sm cursor-pointer"
                       >
                         Process Check-In
                       </button>
+
                     </div>
                   </div>
                 )}
@@ -1362,6 +1407,135 @@ const BookingDetailsDrawer = ({ bookingId, onClose, onRefresh }) => {
         </div>
         </div>
       </div>
+
+      
+      {/* Check-In Confirmation Modal */}
+      {showCheckInModal && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-[3px] z-[70] flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200">
+          <div className="bg-[#f8fafc] w-full max-w-2xl rounded-lg shadow-2xl flex flex-col border border-slate-300 overflow-hidden transform transition-all duration-200 scale-100 font-sans text-slate-800">
+            
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 bg-slate-800 text-white border-b border-slate-300">
+              <div className="flex items-center gap-2">
+                <User size={18} />
+                <h3 className="font-bold text-sm uppercase tracking-wider">Check-In Confirmation</h3>
+              </div>
+              <button onClick={() => setShowCheckInModal(false)} className="p-1 hover:bg-slate-700 rounded transition-colors text-slate-300 hover:text-white bg-transparent border-0 cursor-pointer">
+                <X size={20} strokeWidth={2.5} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-5 overflow-y-auto max-h-[70vh] space-y-4">
+              
+              {/* Mint/Teal ACCENT HEADER */}
+              <div className="bg-[#54c6a9] text-white px-4 py-3 flex justify-between items-center font-bold text-xs uppercase tracking-wider rounded shadow-sm">
+                <span>Guest Verification details</span>
+                <CheckCircle size={16} className="fill-white text-[#54c6a9] stroke-2" />
+              </div>
+
+              <p className="text-xs text-slate-500 font-semibold leading-relaxed">
+                Please verify or enter the guest details below. All fields are completely optional, and check-in can be completed even if they are left blank.
+              </p>
+
+              {/* Input Fields Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                
+                <div className="flex flex-col">
+                  <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">Name As Per ID Proof</label>
+                  <input
+                    type="text"
+                    placeholder="Enter full name"
+                    value={checkInForm.nameAsPerIdProof}
+                    onChange={e => setCheckInForm(prev => ({ ...prev, nameAsPerIdProof: e.target.value }))}
+                    className="border border-slate-300 rounded-md px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white shadow-sm font-sans"
+                  />
+                </div>
+
+                <div className="flex flex-col">
+                  <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">Vehicle Number</label>
+                  <input
+                    type="text"
+                    placeholder="Enter vehicle number"
+                    value={checkInForm.vehicleNumber}
+                    onChange={e => setCheckInForm(prev => ({ ...prev, vehicleNumber: e.target.value }))}
+                    className="border border-slate-300 rounded-md px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white shadow-sm font-sans"
+                  />
+                </div>
+
+                <div className="flex flex-col">
+                  <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">ID Proof Type</label>
+                  <select
+                    value={checkInForm.idProofType}
+                    onChange={e => setCheckInForm(prev => ({ ...prev, idProofType: e.target.value }))}
+                    className="border border-slate-300 rounded-md px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white cursor-pointer shadow-sm font-sans"
+                  >
+                    <option value="Aadhaar Card">Aadhaar Card</option>
+                    <option value="Passport">Passport</option>
+                    <option value="Driving License">Driving License</option>
+                    <option value="Voter ID">Voter ID</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+
+                <div className="flex flex-col">
+                  <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">ID Proof Number</label>
+                  <input
+                    type="text"
+                    placeholder="Enter ID proof number"
+                    value={checkInForm.idProofNumber}
+                    onChange={e => setCheckInForm(prev => ({ ...prev, idProofNumber: e.target.value }))}
+                    className="border border-slate-300 rounded-md px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white shadow-sm font-sans"
+                  />
+                </div>
+
+                <div className="flex flex-col">
+                  <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">Coming From</label>
+                  <input
+                    type="text"
+                    placeholder="Enter location"
+                    value={checkInForm.comingFrom}
+                    onChange={e => setCheckInForm(prev => ({ ...prev, comingFrom: e.target.value }))}
+                    className="border border-slate-300 rounded-md px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white shadow-sm font-sans"
+                  />
+                </div>
+
+                <div className="flex flex-col">
+                  <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1">Going To</label>
+                  <input
+                    type="text"
+                    placeholder="Enter destination"
+                    value={checkInForm.goingTo}
+                    onChange={e => setCheckInForm(prev => ({ ...prev, goingTo: e.target.value }))}
+                    className="border border-slate-300 rounded-md px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white shadow-sm font-sans"
+                  />
+                </div>
+
+              </div>
+
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-3 p-4 bg-slate-50 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setShowCheckInModal(false)}
+                className="px-4 py-2 border border-slate-300 rounded font-bold text-xs text-slate-700 hover:bg-slate-100 transition-colors uppercase tracking-wider cursor-pointer bg-white"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmCheckIn}
+                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded uppercase tracking-wider transition-colors shadow-sm cursor-pointer border-0 font-sans"
+              >
+                Confirm Check-In
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
 
       {/* Hidden Voucher for Print Generation */}
       {data && (

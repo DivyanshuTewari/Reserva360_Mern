@@ -31,7 +31,8 @@ const RoomsInventory = () => {
       setBookings(bookingsRes.data);
       setRoomBlocks(blocksRes.data);
     } catch (error) {
-      toast.error('Failed to load inventory data');
+      console.error('Failed to load inventory data:', error);
+      toast.error('Failed to load inventory data: ' + (error.response?.data?.message || error.message));
     } finally {
       setIsLoading(false);
     }
