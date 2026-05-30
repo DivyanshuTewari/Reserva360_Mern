@@ -1,4 +1,5 @@
 import React, { forwardRef } from 'react';
+import { createPortal } from 'react-dom';
 
 const BookingVoucher = forwardRef(({ 
   bookingId, 
@@ -18,7 +19,7 @@ const BookingVoucher = forwardRef(({
   const checkOut = new Date(dates.checkOut);
   const nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
   
-  return (
+  return createPortal(
     <div className="fixed inset-0 pointer-events-none opacity-0 -z-50 overflow-hidden flex justify-center items-start print-voucher-wrapper">
       <div 
         ref={ref} 
@@ -227,7 +228,8 @@ const BookingVoucher = forwardRef(({
           <p className="text-[9px] text-slate-400">Thank you for choosing {hotelProfile?.name || 'Grand Hotel & Suites'}. We look forward to hosting you!</p>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 });
 

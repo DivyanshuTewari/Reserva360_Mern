@@ -86,45 +86,25 @@
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
-  body * {
-    visibility: hidden;
+  /* Hide all elements under body except the print voucher wrapper */
+  body > *:not(.print-voucher-wrapper) {
+    display: none !important;
   }
-  .print-area, .print-area * {
-    visibility: visible;
-  }
-  .print-area {
-    position: relative !important;
-    width: 210mm !important;
-    margin: 0 auto !important;
-    box-sizing: border-box !important;
-  }
-  /* Ensure parent containers of print area inside booking details drawer don't hide or clip it */
-  .booking-details-backdrop, .booking-details-modal {
-    position: static !important;
-    display: block !important;
-    width: auto !important;
-    height: auto !important;
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-    transform: none !important;
-    overflow: visible !important;
-    padding: 0 !important;
-  }
-  /* Override BookingVoucher's hidden outer wrapper opacity and positioning in print mode */
+  /* Style the print voucher wrapper as a static block to avoid duplicating fixed pages */
   .print-voucher-wrapper {
     opacity: 1 !important;
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
+    position: static !important;
     width: 100% !important;
     height: auto !important;
-    z-index: 99999 !important;
     overflow: visible !important;
     pointer-events: auto !important;
     background: white !important;
     display: flex !important;
     justify-content: center !important;
     align-items: start !important;
+  }
+  .print-area {
+    width: 210mm !important;
+    box-sizing: border-box !important;
   }
 }

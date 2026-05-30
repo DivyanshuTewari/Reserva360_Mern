@@ -594,10 +594,10 @@ exports.addExtraService = async (req, res) => {
     const hotelId = req.user.hotelId;
     const { name, amountWithoutTax, taxName, taxAmount, discount, date, referenceText } = req.body;
     
-    const amt = Number(amountWithoutTax || 0);
-    const tax = Number(taxAmount || 0);
-    const disc = Number(discount || 0);
-    const grandTotal = amt + tax - disc;
+    const amt = roundToTwo(Number(amountWithoutTax || 0));
+    const tax = roundToTwo(Number(taxAmount || 0));
+    const disc = roundToTwo(Number(discount || 0));
+    const grandTotal = roundToTwo(amt + tax - disc);
 
     const extraService = await ExtraService.create({
       bookingId,
@@ -609,7 +609,7 @@ exports.addExtraService = async (req, res) => {
       discount: disc,
       referenceText,
       date: date ? new Date(date) : new Date(),
-      grandTotal: roundToTwo(grandTotal)
+      grandTotal
     });
 
     await recalculateBookingTotals(bookingId, hotelId);

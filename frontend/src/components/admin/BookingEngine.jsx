@@ -4,8 +4,10 @@ import toast from 'react-hot-toast';
 import { Plus, X, Search, ChevronDown, ChevronRight, CreditCard, User, CalendarDays, Download, Printer, Trash2, Ban, Loader2 } from 'lucide-react';
 import DatePicker from '../ui/DatePicker';
 import { jsPDF } from 'jspdf';
-import html2canvas from 'html2canvas';
+import html2canvas from 'html2canvas-pro';
 import BookingVoucher from './BookingVoucher';
+
+const roundToTwo = (num) => Math.round((num + Number.EPSILON) * 100) / 100;
 
 const BookingEngine = () => {
   const [bookings, setBookings] = useState([]);
@@ -27,7 +29,7 @@ const BookingEngine = () => {
   const [isSavingStep, setIsSavingStep] = useState(false);
 
   // Redesigned Room Table Discount & Edit States
-  const [discountInput, setDiscountInput] = useState(0);
+  const [discountInput, setDiscountInput] = useState('');
   const [discountTypeInput, setDiscountTypeInput] = useState('percent');
   const [totalDiscount, setTotalDiscount] = useState(0);
 
@@ -75,39 +77,39 @@ const BookingEngine = () => {
       
       if (field === 'cost') {
         const val = Math.max(0, value);
-        updated.cost = val;
+        updated.cost = roundToTwo(val);
         if (mode === 'inclusive' || mode === 'exclusive') {
-          updated.gst = val * 0.18;
-          updated.totalAmount = val + updated.gst;
+          updated.gst = roundToTwo(val * 0.18);
+          updated.totalAmount = roundToTwo(val + updated.gst);
         } else {
           updated.gst = 0;
-          updated.totalAmount = val;
+          updated.totalAmount = roundToTwo(val);
         }
       } else if (field === 'gst') {
         const val = Math.max(0, value);
-        updated.gst = val;
-        updated.totalAmount = updated.cost + val;
+        updated.gst = roundToTwo(val);
+        updated.totalAmount = roundToTwo(updated.cost + val);
       } else if (field === 'totalAmount') {
         const val = Math.max(0, value);
-        updated.totalAmount = val;
+        updated.totalAmount = roundToTwo(val);
         if (mode === 'inclusive' || mode === 'exclusive') {
-          updated.cost = val / 1.18;
-          updated.gst = val - updated.cost;
+          updated.cost = roundToTwo(val / 1.18);
+          updated.gst = roundToTwo(val - updated.cost);
         } else {
-          updated.cost = val;
+          updated.cost = roundToTwo(val);
           updated.gst = 0;
         }
       } else if (field === 'discountValue' || field === 'discountType') {
         const discVal = field === 'discountValue' ? value : updated.discountValue || 0;
         const discType = field === 'discountType' ? value : updated.discountType || 'flat';
-        const subtotal = updated.cost + updated.gst;
+        const subtotal = roundToTwo(updated.cost + updated.gst);
         let discAmount = 0;
         if (discType === 'percent') {
-          discAmount = subtotal * (discVal / 100);
+          discAmount = roundToTwo(subtotal * (Number(discVal || 0) / 100));
         } else {
-          discAmount = discVal;
+          discAmount = roundToTwo(Number(discVal || 0));
         }
-        updated.discount = Math.min(subtotal, discAmount);
+        updated.discount = roundToTwo(Math.min(subtotal, discAmount));
       }
       
       debounceSyncBooking(updated);
@@ -126,19 +128,19 @@ const BookingEngine = () => {
       
       if (mode === 'inclusive') {
         const currentTotal = total > 0 ? total : cost;
-        updated.cost = currentTotal / 1.18;
-        updated.gst = currentTotal - updated.cost;
-        updated.totalAmount = currentTotal;
+        updated.cost = roundToTwo(currentTotal / 1.18);
+        updated.gst = roundToTwo(currentTotal - updated.cost);
+        updated.totalAmount = roundToTwo(currentTotal);
       } else if (mode === 'exclusive') {
         const currentCost = cost > 0 ? cost : total / 1.18;
-        updated.cost = currentCost;
-        updated.gst = currentCost * 0.18;
-        updated.totalAmount = currentCost + updated.gst;
+        updated.cost = roundToTwo(currentCost);
+        updated.gst = roundToTwo(currentCost * 0.18);
+        updated.totalAmount = roundToTwo(currentCost + updated.gst);
       } else if (mode === 'out_of_scope') {
         const currentCost = cost > 0 ? cost : total;
-        updated.cost = currentCost;
+        updated.cost = roundToTwo(currentCost);
         updated.gst = 0;
-        updated.totalAmount = currentCost;
+        updated.totalAmount = roundToTwo(currentCost);
       }
       
       debounceSyncBooking(updated);
@@ -193,19 +195,19 @@ const BookingEngine = () => {
       
       if (mode === 'inclusive') {
         const currentTotal = total > 0 ? total : cost;
-        updated.baseCost = currentTotal / 1.18;
-        updated.gst = currentTotal - updated.baseCost;
-        updated.total = currentTotal;
+        updated.baseCost = roundToTwo(currentTotal / 1.18);
+        updated.gst = roundToTwo(currentTotal - updated.baseCost);
+        updated.total = roundToTwo(currentTotal);
       } else if (mode === 'exclusive') {
         const currentCost = cost > 0 ? cost : total / 1.18;
-        updated.baseCost = currentCost;
-        updated.gst = currentCost * 0.18;
-        updated.total = currentCost + updated.gst;
+        updated.baseCost = roundToTwo(currentCost);
+        updated.gst = roundToTwo(currentCost * 0.18);
+        updated.total = roundToTwo(currentCost + updated.gst);
       } else if (mode === 'out_of_scope') {
         const currentCost = cost > 0 ? cost : total;
-        updated.baseCost = currentCost;
+        updated.baseCost = roundToTwo(currentCost);
         updated.gst = 0;
-        updated.total = currentCost;
+        updated.total = roundToTwo(currentCost);
       }
       return updated;
     });
@@ -277,9 +279,9 @@ const BookingEngine = () => {
       
       return {
         ...room,
-        baseCost,
-        gst,
-        total
+        baseCost: roundToTwo(baseCost),
+        gst: roundToTwo(gst),
+        total: roundToTwo(total)
       };
     }));
   }, [dates.checkIn, dates.checkOut, ratePlans, roomTypes, gstMode]);
@@ -372,9 +374,9 @@ const BookingEngine = () => {
       children: 0,
       infant: 0,
       ratePlanId: defaultPlan?._id || '',
-      baseCost,
-      gst,
-      total
+      baseCost: roundToTwo(baseCost),
+      gst: roundToTwo(gst),
+      total: roundToTwo(total)
     }]);
   };
 
@@ -399,39 +401,39 @@ const BookingEngine = () => {
           const days = Math.max(1, Math.ceil((new Date(dates.checkOut) - new Date(dates.checkIn)) / (1000 * 60 * 60 * 24)));
           const rate = Math.max(0, (plan?.price || 0) * days);
           if (gstMode === 'inclusive') {
-            updated.baseCost = rate / 1.18;
-            updated.gst = rate - updated.baseCost;
-            updated.total = rate;
+            updated.baseCost = roundToTwo(rate / 1.18);
+            updated.gst = roundToTwo(rate - updated.baseCost);
+            updated.total = roundToTwo(rate);
           } else if (gstMode === 'out_of_scope') {
-            updated.baseCost = rate;
+            updated.baseCost = roundToTwo(rate);
             updated.gst = 0;
-            updated.total = rate;
+            updated.total = roundToTwo(rate);
           } else {
-            updated.baseCost = rate;
-            updated.gst = rate * 0.18;
-            updated.total = rate + updated.gst;
+            updated.baseCost = roundToTwo(rate);
+            updated.gst = roundToTwo(rate * 0.18);
+            updated.total = roundToTwo(rate + updated.gst);
           }
         } else if (field === 'customCost') {
           const val = Math.max(0, value);
-          updated.baseCost = val;
+          updated.baseCost = roundToTwo(val);
           if (gstMode === 'inclusive' || gstMode === 'exclusive') {
-            updated.gst = val * 0.18;
-            updated.total = val + updated.gst;
+            updated.gst = roundToTwo(val * 0.18);
+            updated.total = roundToTwo(val + updated.gst);
           } else {
             updated.gst = 0;
-            updated.total = val;
+            updated.total = roundToTwo(val);
           }
         } else if (field === 'customGst') {
-          updated.gst = Math.max(0, value);
-          updated.total = updated.baseCost + updated.gst;
+          updated.gst = roundToTwo(Math.max(0, value));
+          updated.total = roundToTwo(updated.baseCost + updated.gst);
         } else if (field === 'customTotal') {
           const val = Math.max(0, value);
-          updated.total = val;
+          updated.total = roundToTwo(val);
           if (gstMode === 'inclusive' || gstMode === 'exclusive') {
-            updated.baseCost = val / 1.18;
-            updated.gst = val - updated.baseCost;
+            updated.baseCost = roundToTwo(val / 1.18);
+            updated.gst = roundToTwo(val - updated.baseCost);
           } else {
-            updated.baseCost = val;
+            updated.baseCost = roundToTwo(val);
             updated.gst = 0;
           }
         }
@@ -444,13 +446,14 @@ const BookingEngine = () => {
 
   const applyDiscount = () => {
     let discAmount = 0;
-    const subtotal = totalNetCost + totalGST;
+    const subtotal = roundToTwo(totalNetCost + totalGST);
+    const inputVal = Number(discountInput || 0);
     if (discountTypeInput === 'percent') {
-      discAmount = subtotal * (discountInput / 100);
+      discAmount = roundToTwo(subtotal * (inputVal / 100));
     } else {
-      discAmount = discountInput;
+      discAmount = roundToTwo(inputVal);
     }
-    setTotalDiscount(Math.max(0, Math.min(subtotal, discAmount)));
+    setTotalDiscount(roundToTwo(Math.max(0, Math.min(subtotal, discAmount))));
     toast.success('Discount applied successfully');
   };
 
@@ -514,23 +517,23 @@ const BookingEngine = () => {
           specialRequests: guestDetails.specialNote,
           checkInDate: dates.checkIn,
           checkOutDate: dates.checkOut,
-          totalAmount: room.total,
+          totalAmount: roundToTwo(room.total),
           status: 'confirmed',
           paymentStatus: paymentDetails.status,
           paymentMode: paymentDetails.paymentMode,
           paymentMethod: paymentDetails.paymentMethod,
           paymentReference: paymentDetails.paymentReference,
           internalNotes: paymentDetails.internalNotes,
-          paidAmount: index === 0 ? Number(paymentDetails.amountPaid || 0) : 0,
-          pendingAmount: Math.max(0, room.total - (index === 0 ? Number(paymentDetails.amountPaid || 0) : 0)),
+          paidAmount: index === 0 ? roundToTwo(Number(paymentDetails.amountPaid || 0)) : 0,
+          pendingAmount: Math.max(0, roundToTwo(room.total - (index === 0 ? Number(paymentDetails.amountPaid || 0) : 0))),
           bookingGroupId,
           adults: room.adults || 2,
           children: room.children || 0,
           infant: room.infant || 0,
           mealPlan: ratePlans.find(p => p._id === room.ratePlanId)?.planName || 'Room Only',
-          cost: room.baseCost,
-          gst: room.gst,
-          discount: totalDiscount / selectedRooms.length,
+          cost: roundToTwo(room.baseCost),
+          gst: roundToTwo(room.gst),
+          discount: roundToTwo(totalDiscount / selectedRooms.length),
           gstMode: gstMode
         });
       }
@@ -685,7 +688,7 @@ const BookingEngine = () => {
       specialNote: ''
     });
     setPaymentDetails({ paymentMode: 'Prepaid', paymentMethod: 'Cash', amountPaid: 0, paymentReference: '', internalNotes: '', status: 'pending' });
-    setDiscountInput(0);
+    setDiscountInput('');
     setTotalDiscount(0);
     setCurrentBookingId('');
   };
@@ -1141,7 +1144,14 @@ const BookingEngine = () => {
                                         type="number"
                                         placeholder="Value"
                                         value={discountInput}
-                                        onChange={(e) => setDiscountInput(Math.max(0, Number(e.target.value)))}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          if (val === '') {
+                                            setDiscountInput('');
+                                          } else {
+                                            setDiscountInput(Math.max(0, Number(val)));
+                                          }
+                                        }}
                                         className="bg-[#0a0b0e] border border-white/10 rounded-lg p-1.5 outline-none w-20 text-white text-xs font-semibold focus:border-blue-500"
                                       />
                                       <select 
@@ -1613,11 +1623,13 @@ const BookingEngine = () => {
                               type="number" 
                               value={paymentDetails.amountPaid} 
                               onChange={e => {
-                                const val = Math.max(0, Number(e.target.value));
+                                const inputVal = e.target.value;
+                                const val = inputVal === '' ? '' : Math.max(0, Number(inputVal));
+                                const numVal = Number(val);
                                 setPaymentDetails({
                                   ...paymentDetails, 
                                   amountPaid: val,
-                                  status: val >= payableAmount ? 'paid' : val > 0 ? 'partial' : 'pending'
+                                  status: numVal >= payableAmount ? 'paid' : numVal > 0 ? 'partial' : 'pending'
                                 });
                               }} 
                               className="w-full bg-[#0a0b0e] border border-emerald-500/30 rounded-xl py-3 pl-8 pr-4 text-emerald-400 font-extrabold text-lg outline-none focus:border-emerald-400 transition shadow-inner" 
@@ -2062,17 +2074,19 @@ const BookingEngine = () => {
                           <input 
                             type="number"
                             placeholder="Value"
-                            value={editingBooking.discountValue || 0}
+                            value={editingBooking.discountValue ?? ''}
                             onChange={(e) => {
-                              const val = Math.max(0, Number(e.target.value));
+                              const inputVal = e.target.value;
+                              const val = inputVal === '' ? '' : Math.max(0, Number(inputVal));
                               const cost = editingBooking.cost || 0;
                               const gst = editingBooking.gst || 0;
                               const subtotal = cost + gst;
                               let discAmount = 0;
+                              const numVal = Number(val);
                               if (editingBooking.discountType === 'percent') {
-                                discAmount = subtotal * (val / 100);
+                                discAmount = subtotal * (numVal / 100);
                               } else {
-                                discAmount = val;
+                                discAmount = numVal;
                               }
                               const applied = Math.min(subtotal, discAmount);
                               handleEditFieldChange('discountValue', val);
@@ -2214,17 +2228,19 @@ const BookingEngine = () => {
                       <input 
                         type="number"
                         placeholder="Value"
-                        value={editingBooking.discountValue || 0}
+                        value={editingBooking.discountValue ?? ''}
                         onChange={(e) => {
-                          const val = Math.max(0, Number(e.target.value));
+                          const inputVal = e.target.value;
+                          const val = inputVal === '' ? '' : Math.max(0, Number(inputVal));
                           const cost = editingBooking.cost || 0;
                           const gst = editingBooking.gst || 0;
                           const subtotal = cost + gst;
                           let discAmount = 0;
+                          const numVal = Number(val);
                           if (editingBooking.discountType === 'percent') {
-                            discAmount = subtotal * (val / 100);
+                            discAmount = subtotal * (numVal / 100);
                           } else {
-                            discAmount = val;
+                            discAmount = numVal;
                           }
                           const applied = Math.min(subtotal, discAmount);
                           handleEditFieldChange('discountValue', val);
