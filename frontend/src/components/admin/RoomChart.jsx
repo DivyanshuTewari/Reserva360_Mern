@@ -4,6 +4,15 @@ import toast from 'react-hot-toast';
 import { ChevronLeft, ChevronRight, RefreshCw, Calendar as CalendarIcon, FilterX, Search, X } from 'lucide-react';
 import BookingDetailsDrawer from './BookingDetailsDrawer';
 
+const getStartOfCurrentWeek = () => {
+  const today = new Date();
+  const day = today.getDay();
+  const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+  const monday = new Date(today.setDate(diff));
+  monday.setHours(0, 0, 0, 0);
+  return monday;
+};
+
 const RoomChart = () => {
   const [categories, setCategories] = useState([]);
   const [bookings, setBookings] = useState([]);
@@ -29,18 +38,22 @@ const RoomChart = () => {
         return parsed;
       }
     }
-    return new Date();
+    return getStartOfCurrentWeek();
   });
   const [endDate, setEndDate] = useState(() => {
     const savedStart = localStorage.getItem('reserva_roomchart_startdate');
-    let date = new Date();
+    let date;
     if (savedStart && savedStart !== 'undefined' && savedStart !== 'null') {
       const parsed = new Date(savedStart);
       if (!isNaN(parsed.getTime())) {
-        date = parsed;
+        date = new Date(parsed);
+      } else {
+        date = getStartOfCurrentWeek();
       }
+    } else {
+      date = getStartOfCurrentWeek();
     }
-    date.setDate(date.getDate() + 14); 
+    date.setDate(date.getDate() + 6); 
     return date;
   });
 
@@ -54,7 +67,7 @@ const RoomChart = () => {
     try {
       setIsLoading(true);
       const safeStart = (startDate && !isNaN(startDate.getTime())) ? startDate : new Date();
-      const safeEnd = (endDate && !isNaN(endDate.getTime())) ? endDate : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+      const safeEnd = (endDate && !isNaN(endDate.getTime())) ? endDate : new Date(Date.now() + 6 * 24 * 60 * 60 * 1000);
       
       const startStr = safeStart.toISOString().split('T')[0];
       const endStr = safeEnd.toISOString().split('T')[0];
@@ -130,7 +143,7 @@ const RoomChart = () => {
     // Pad start date by 2 days so it's not right on the edge
     bIn.setDate(bIn.getDate() - 2);
     const newEnd = new Date(bIn);
-    newEnd.setDate(newEnd.getDate() + 14);
+    newEnd.setDate(newEnd.getDate() + 6);
     
     setStartDate(bIn);
     setEndDate(newEnd);
@@ -142,14 +155,14 @@ const RoomChart = () => {
     if (!e.target.value) return;
     const date = new Date(e.target.value);
     const newEnd = new Date(date);
-    newEnd.setDate(newEnd.getDate() + 14);
+    newEnd.setDate(newEnd.getDate() + 6);
     setStartDate(date);
     setEndDate(newEnd);
   };
 
   // Nav Handlers
   const handlePrevDays = () => {
-    const days = Math.round((endDate - startDate) / (1000 * 60 * 60 * 24));
+    const days = Math.round((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
     const newStart = new Date(startDate);
     newStart.setDate(newStart.getDate() - days);
     const newEnd = new Date(endDate);
@@ -159,7 +172,7 @@ const RoomChart = () => {
   };
 
   const handleNextDays = () => {
-    const days = Math.round((endDate - startDate) / (1000 * 60 * 60 * 24));
+    const days = Math.round((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
     const newStart = new Date(startDate);
     newStart.setDate(newStart.getDate() + days);
     const newEnd = new Date(endDate);
@@ -279,7 +292,7 @@ const RoomChart = () => {
         const isTargeted = searchTargetBookingId === booking.id;
 
         cells.push(
-          <td key={`b-${booking.id}-${i}`} colSpan={colSpan} className="p-0 border border-slate-400 relative h-[45px] min-w-[70px]">
+          <td key={`b-${booking.id}-${i}`} colSpan={colSpan} className="p-0 border border-slate-400 relative h-[45px] min-w-[120px]">
             <div 
               id={`booking-block-${booking.id}`}
               onClick={() => setDrawerBookingId(booking.id)}
@@ -321,16 +334,16 @@ const RoomChart = () => {
         const colSpan = Math.max(1, span);
 
         cells.push(
-          <td key={`blk-${block.id}-${i}`} colSpan={colSpan} className="p-0 border border-slate-400 relative h-[45px] min-w-[70px] bg-slate-100">
+          <td key={`blk-${block.id}-${i}`} colSpan={colSpan} className="p-0 border border-slate-400 relative h-[45px] min-w-[120px] bg-slate-100">
             <div className={`absolute inset-y-[2px] inset-x-0 mx-[1px] bg-[#64748b] border border-[#475569] text-white text-[11px] font-bold flex items-center justify-center px-1 truncate group z-10 box-border ${activeFilter ? 'opacity-20' : 'opacity-100'}`} title={block.reason}>
-               MAINTENANCE
+               {block.reason ? block.reason.replace('_', ' ').toUpperCase() : 'MAINTENANCE'}
             </div>
           </td>
         );
         i += colSpan;
       } else {
         cells.push(
-          <td key={`empty-${i}`} className={`p-0 border border-slate-400 min-w-[70px] w-[70px] h-[45px] ${isWeekend ? 'bg-[#f8fafc]' : 'bg-white'}`}></td>
+          <td key={`empty-${i}`} className={`p-0 border border-slate-400 min-w-[120px] w-[120px] h-[45px] ${isWeekend ? 'bg-[#f8fafc]' : 'bg-white'}`}></td>
         );
         i++;
       }
@@ -479,7 +492,7 @@ const RoomChart = () => {
                 return (
                   <th 
                     key={idx} 
-                    className={`min-w-[70px] w-[70px] p-0 text-center border border-slate-400 align-middle
+                    className={`min-w-[120px] w-[120px] p-0 text-center border border-slate-400 align-middle
                       ${isToday ? 'bg-[#dcfce7] text-[#166534]' : isWeekend ? 'bg-[#fff7ed] text-slate-800' : 'bg-[#f8fafc] text-slate-800'}`}
                   >
                     <div className="flex flex-col h-full py-1.5">

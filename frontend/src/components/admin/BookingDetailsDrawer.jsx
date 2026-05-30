@@ -74,6 +74,7 @@ const BookingDetailsDrawer = ({ bookingId, onClose, onRefresh }) => {
     emailInvoiceToGuest: 'No'
   });
   const [isSavingCheckout, setIsSavingCheckout] = useState(false);
+  const [checkoutRooms, setCheckoutRooms] = useState([]);
   
   const [hotelProfile, setHotelProfile] = useState(null);
   const [printTitle, setPrintTitle] = useState('Guest Invoice');
@@ -89,6 +90,22 @@ const BookingDetailsDrawer = ({ bookingId, onClose, onRefresh }) => {
       });
       setSelectedRoomsMap(roomMap);
       setSelectedStatusMap(statusMap);
+
+      // Initialize checkout rooms selection for checked-in rooms
+      setCheckoutRooms(
+        data.groupBookings
+          .filter(gb => gb.status === 'checked-in')
+          .map(gb => ({
+            bookingId: gb._id,
+            roomNumber: gb.roomId?.roomNumber || 'TBD',
+            roomTypeName: gb.roomId?.roomTypeId?.name || gb.roomId?.categoryName || 'Standard Room',
+            roomId: gb.roomId?._id || '',
+            roomTypeId: gb.roomId?.roomTypeId?._id || gb.roomId?.roomTypeId || '',
+            selected: true,
+            markRoomTo: 'Cleaning',
+            durationHours: '2'
+          }))
+      );
     }
   }, [data]);
 
@@ -311,17 +328,42 @@ const BookingDetailsDrawer = ({ bookingId, onClose, onRefresh }) => {
       return;
     }
 
+    const selectedRooms = checkoutRooms.filter(cr => cr.selected);
+    if (selectedRooms.length === 0) {
+      toast.error('Please select at least one room to check out');
+      return;
+    }
+
     setIsSavingCheckout(true);
     const toastId = toast.loading('Processing check-out...');
     try {
-      await api.put(`/admin/bookings/${bookingId}/checkout`, {
-        haveGst: checkoutForm.haveGst,
-        onDutyManager: checkoutForm.onDutyManager,
-        departureDateTime: checkoutForm.departureDateTime,
-        checkoutComment: checkoutForm.checkoutComment,
-        markRoomTo: checkoutForm.markRoomTo,
-        emailInvoiceToGuest: checkoutForm.emailInvoiceToGuest
+      const checkoutPromises = selectedRooms.map(async cr => {
+        // 1. Process checkout for the booking
+        await api.put(`/admin/bookings/${cr.bookingId}/checkout`, {
+          haveGst: checkoutForm.haveGst,
+          onDutyManager: checkoutForm.onDutyManager,
+          departureDateTime: checkoutForm.departureDateTime,
+          checkoutComment: checkoutForm.checkoutComment,
+          markRoomTo: cr.markRoomTo,
+          emailInvoiceToGuest: checkoutForm.emailInvoiceToGuest
+        });
+
+        // 2. If marked to cleaning or maintenance, create a RoomBlock
+        if (cr.markRoomTo === 'Cleaning' || cr.markRoomTo === 'Maintenance') {
+          const start = new Date(checkoutForm.departureDateTime);
+          const end = new Date(start.getTime() + Number(cr.durationHours) * 60 * 60 * 1000);
+          await api.post('/admin/room-blocks', {
+            roomId: cr.roomId,
+            roomTypeId: cr.roomTypeId,
+            startDate: start.toISOString(),
+            endDate: end.toISOString(),
+            reason: cr.markRoomTo === 'Cleaning' ? 'cleaning' : 'maintenance',
+            notes: `Checkout ${cr.markRoomTo.toLowerCase()} block for Room ${cr.roomNumber}`
+          });
+        }
       });
+
+      await Promise.all(checkoutPromises);
 
       toast.success('Check-out completed successfully!', { id: toastId });
       await fetchDetails();
@@ -1151,7 +1193,7 @@ const BookingDetailsDrawer = ({ bookingId, onClose, onRefresh }) => {
 
                     {/* Check Out Form fields grid */}
                     <form onSubmit={handleProcessCheckout} className="space-y-4">
-                      <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                         
                         <div className="flex flex-col">
                           <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Have GST</label>
@@ -1200,20 +1242,6 @@ const BookingDetailsDrawer = ({ bookingId, onClose, onRefresh }) => {
                         </div>
 
                         <div className="flex flex-col">
-                          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Mark Room(s) To</label>
-                          <select
-                            value={checkoutForm.markRoomTo}
-                            onChange={e => setCheckoutForm(prev => ({ ...prev, markRoomTo: e.target.value }))}
-                            className="border border-slate-300 rounded px-2.5 py-1.5 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white cursor-pointer shadow-sm"
-                          >
-                            <option value="Dirty">Dirty</option>
-                            <option value="Available">Available</option>
-                            <option value="Cleaning">Cleaning</option>
-                            <option value="Maintenance">Maintenance</option>
-                          </select>
-                        </div>
-
-                        <div className="flex flex-col">
                           <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Email Invoice To Guest</label>
                           <select
                             value={checkoutForm.emailInvoiceToGuest}
@@ -1225,6 +1253,83 @@ const BookingDetailsDrawer = ({ bookingId, onClose, onRefresh }) => {
                           </select>
                         </div>
 
+                      </div>
+
+                      {/* Room Selection and Target Status / Duration Configuration */}
+                      <div className="bg-slate-50 border border-slate-300 rounded p-3 my-3">
+                        <span className="text-slate-700 block text-xs font-extrabold uppercase tracking-wider mb-2">Configure Rooms for Checkout & Cleaning</span>
+                        
+                        <div className="space-y-2.5">
+                          {checkoutRooms.map((cr, idx) => (
+                            <div key={cr.bookingId} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-2 bg-white border border-slate-200 rounded shadow-sm">
+                              
+                              {/* Room details & checkbox */}
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={cr.selected}
+                                  onChange={e => {
+                                    const updated = [...checkoutRooms];
+                                    updated[idx].selected = e.target.checked;
+                                    setCheckoutRooms(updated);
+                                  }}
+                                  className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 cursor-pointer"
+                                />
+                                <div className="text-xs font-bold text-slate-800 font-sans">
+                                  Room {cr.roomNumber} <span className="text-slate-500 font-medium">({cr.roomTypeName})</span>
+                                </div>
+                              </div>
+
+                              {/* Status and Duration options (visible only if selected) */}
+                              {cr.selected && (
+                                <div className="flex items-center gap-2 flex-wrap font-sans">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[10px] font-bold uppercase text-slate-400">Mark to:</span>
+                                    <select
+                                      value={cr.markRoomTo}
+                                      onChange={e => {
+                                        const updated = [...checkoutRooms];
+                                        updated[idx].markRoomTo = e.target.value;
+                                        setCheckoutRooms(updated);
+                                      }}
+                                      className="border border-slate-300 rounded px-2 py-1 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white cursor-pointer shadow-sm"
+                                    >
+                                      <option value="Dirty">Dirty</option>
+                                      <option value="Available">Available</option>
+                                      <option value="Cleaning">Cleaning</option>
+                                      <option value="Maintenance">Maintenance</option>
+                                    </select>
+                                  </div>
+
+                                  {(cr.markRoomTo === 'Cleaning' || cr.markRoomTo === 'Maintenance') && (
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-[10px] font-bold uppercase text-slate-400">Duration:</span>
+                                      <select
+                                        value={cr.durationHours}
+                                        onChange={e => {
+                                          const updated = [...checkoutRooms];
+                                          updated[idx].durationHours = e.target.value;
+                                          setCheckoutRooms(updated);
+                                        }}
+                                        className="border border-slate-300 rounded px-2 py-1 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white cursor-pointer shadow-sm"
+                                      >
+                                        <option value="1">1 Hour</option>
+                                        <option value="2">2 Hours</option>
+                                        <option value="4">4 Hours</option>
+                                        <option value="8">8 Hours</option>
+                                        <option value="12">12 Hours</option>
+                                        <option value="24">1 Day</option>
+                                        <option value="48">2 Days</option>
+                                        <option value="72">3 Days</option>
+                                        <option value="168">1 Week</option>
+                                      </select>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       </div>
 
                       {/* Dynamic Pending Balance Warning Alert box */}

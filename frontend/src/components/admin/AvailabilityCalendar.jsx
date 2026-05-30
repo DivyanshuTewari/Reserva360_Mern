@@ -65,13 +65,26 @@ const AvailabilityCalendar = ({ roomTypes, rooms, bookings = [], roomBlocks = []
     const typeRooms = rooms.filter(r => r.roomTypeId?._id === type._id || r.roomTypeId === type._id);
     const total = typeRooms.length;
 
-    // Count global-status-based blocks
-    let blocked = typeRooms.filter(r => r.status === 'maintenance' || r.status === 'cleaning').length;
-
-    // Count date-specific blocks from roomBlocks
     const current = new Date(date);
     current.setHours(0, 0, 0, 0);
 
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const isToday = current.getTime() === today.getTime();
+
+    // Set of blocked room IDs for this specific date
+    const blockedRoomIds = new Set();
+
+    // 1. If it's today, add rooms that are globally cleaning/maintenance
+    if (isToday) {
+      typeRooms.forEach(r => {
+        if (r.status === 'maintenance' || r.status === 'cleaning') {
+          blockedRoomIds.add(r._id.toString());
+        }
+      });
+    }
+
+    // 2. Add rooms that have active RoomBlocks on this date
     const activeBlocks = roomBlocks.filter(b => {
       const isThisType = b.roomTypeId?._id === type._id || b.roomTypeId === type._id;
       if (!isThisType) return false;
@@ -80,10 +93,14 @@ const AvailabilityCalendar = ({ roomTypes, rooms, bookings = [], roomBlocks = []
       return current >= bStart && current <= bEnd;
     });
 
-    // Each active block blocks one room; deduplicate by roomId to avoid double-counting
-    const blockedRoomIds = new Set(activeBlocks.map(b => b.roomId?._id || b.roomId));
-    blocked += blockedRoomIds.size;
-    blocked = Math.min(blocked, total); // can't exceed total
+    activeBlocks.forEach(b => {
+      const rId = b.roomId?._id || b.roomId;
+      if (rId) {
+        blockedRoomIds.add(rId.toString());
+      }
+    });
+
+    const blocked = Math.min(blockedRoomIds.size, total);
 
     let booked = 0;
     bookings.forEach(b => {

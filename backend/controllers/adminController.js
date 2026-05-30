@@ -430,6 +430,10 @@ exports.searchRackBookings = async (req, res) => {
   } catch (error) { res.status(500).json({ message: error.message }); }
 };
 
+const roundToTwo = (num) => {
+  return Math.round((num + Number.EPSILON) * 100) / 100;
+};
+
 // Helper to update booking totals based on extra services and payments
 // Helper to distribute and update totals for a group booking
 const recalculateGroupBookingTotals = async (bookingGroupId, hotelId) => {
@@ -451,7 +455,7 @@ const recalculateGroupBookingTotals = async (bookingGroupId, hotelId) => {
       hotelId: hotelId,
       paymentType: bookings[0].paymentMethod || 'Cash',
       additionType: 'Default',
-      amount: totalLegacyPaid,
+      amount: roundToTwo(totalLegacyPaid),
       paymentDate: bookings[0].createdAt || new Date(),
       referenceText: 'Initial Payment (From Reservation)'
     });
@@ -461,10 +465,10 @@ const recalculateGroupBookingTotals = async (bookingGroupId, hotelId) => {
   const services = await ExtraService.find({ bookingId: { $in: bookingIds } });
   const payments = await Payment.find({ bookingId: { $in: bookingIds } });
 
-  const totalPayments = payments.reduce((sum, p) => {
+  const totalPayments = roundToTwo(payments.reduce((sum, p) => {
     if (p.additionType === 'Refund') return sum - (p.amount || 0);
     return sum + (p.amount || 0);
-  }, 0);
+  }, 0));
 
   // Use the total payments (including the seeded initial payment)
   let groupPaidAmount = totalPayments;
@@ -475,7 +479,7 @@ const recalculateGroupBookingTotals = async (bookingGroupId, hotelId) => {
     const bServices = services.filter(s => s.bookingId.toString() === b._id.toString());
     const bServicesTotal = bServices.reduce((sum, s) => sum + (s.grandTotal || 0), 0);
     const baseAmount = (b.cost || 0) + (b.gst || 0) - (b.discount || 0);
-    const bTotalAmount = baseAmount + bServicesTotal;
+    const bTotalAmount = roundToTwo(baseAmount + bServicesTotal);
     updatedBookings.push({
       _id: b._id,
       totalAmount: bTotalAmount,
@@ -496,10 +500,10 @@ const recalculateGroupBookingTotals = async (bookingGroupId, hotelId) => {
       ub.paidAmount = ub.totalAmount;
       ub.pendingAmount = 0;
       ub.paymentStatus = 'paid';
-      remainingPaid -= ub.totalAmount;
+      remainingPaid = roundToTwo(remainingPaid - ub.totalAmount);
     } else {
       ub.paidAmount = remainingPaid;
-      ub.pendingAmount = ub.totalAmount - remainingPaid;
+      ub.pendingAmount = roundToTwo(ub.totalAmount - remainingPaid);
       ub.paymentStatus = 'partial';
       remainingPaid = 0;
     }
@@ -507,7 +511,7 @@ const recalculateGroupBookingTotals = async (bookingGroupId, hotelId) => {
 
   // Allocate any overpayment (positive balance) to the first booking in the group
   if (remainingPaid > 0 && updatedBookings.length > 0) {
-    updatedBookings[0].paidAmount += remainingPaid;
+    updatedBookings[0].paidAmount = roundToTwo(updatedBookings[0].paidAmount + remainingPaid);
     updatedBookings[0].pendingAmount = 0;
     updatedBookings[0].paymentStatus = 'paid';
   }
@@ -542,7 +546,7 @@ const recalculateBookingTotals = async (bookingId, hotelId) => {
         hotelId: hotelId,
         paymentType: booking.paymentMethod || 'Cash',
         additionType: 'Default',
-        amount: booking.paidAmount,
+        amount: roundToTwo(booking.paidAmount),
         paymentDate: booking.createdAt || new Date(),
         referenceText: 'Initial Payment (From Reservation)'
       });
@@ -553,14 +557,14 @@ const recalculateBookingTotals = async (bookingId, hotelId) => {
     const servicesTotal = services.reduce((sum, s) => sum + (s.grandTotal || 0), 0);
 
     const payments = await Payment.find({ bookingId });
-    const totalPaid = payments.reduce((sum, p) => {
+    const totalPaid = roundToTwo(payments.reduce((sum, p) => {
       if (p.additionType === 'Refund') return sum - (p.amount || 0);
       return sum + (p.amount || 0);
-    }, 0);
+    }, 0));
 
     const baseAmount = (booking.cost || 0) + (booking.gst || 0) - (booking.discount || 0);
-    const newTotal = baseAmount + servicesTotal;
-    const newPending = Math.max(0, newTotal - totalPaid);
+    const newTotal = roundToTwo(baseAmount + servicesTotal);
+    const newPending = Math.max(0, roundToTwo(newTotal - totalPaid));
 
     let paymentStatus = 'pending';
     if (totalPaid >= newTotal && newTotal > 0) {
@@ -605,7 +609,7 @@ exports.addExtraService = async (req, res) => {
       discount: disc,
       referenceText,
       date: date ? new Date(date) : new Date(),
-      grandTotal
+      grandTotal: roundToTwo(grandTotal)
     });
 
     await recalculateBookingTotals(bookingId, hotelId);
@@ -652,7 +656,7 @@ exports.addPaymentFolio = async (req, res) => {
       hotelId,
       paymentType,
       additionType: additionType || 'Default',
-      amount: Number(amount || 0),
+      amount: roundToTwo(Number(amount || 0)),
       paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
       referenceText
     });
