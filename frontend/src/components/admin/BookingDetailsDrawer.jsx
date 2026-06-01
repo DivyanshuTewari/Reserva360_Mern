@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
-import { X, User, Calendar, CreditCard, CheckCircle, ChevronDown, ChevronUp, FileText, Info, Plus, RefreshCw, Copy, Check } from 'lucide-react';
+import { X, User, Calendar, CreditCard, CheckCircle, ChevronDown, ChevronUp, FileText, Info, Plus, RefreshCw, Copy, Check, CalendarDays, Search, Loader2, Download, Printer } from 'lucide-react';
 import BookingVoucher from './BookingVoucher';
+import DatePicker from '../ui/DatePicker';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas-pro';
 
 const Accordion = ({ title, defaultOpen = false, children, badge }) => {
   const [isOpen, setIsOpen] = useState(defaultOpen);
@@ -89,6 +92,463 @@ const BookingDetailsDrawer = ({ bookingId, onClose, onRefresh }) => {
     idProofNumber: '',
     nameAsPerIdProof: ''
   });
+
+  // Stepper and wizard states for full editing
+  const [showEditWizard, setShowEditWizard] = useState(false);
+  const [currentStep, setCurrentStep] = useState(1);
+  const [isSavingStep, setIsSavingStep] = useState(false);
+  const [roomTypes, setRoomTypes] = useState([]);
+  const [ratePlans, setRatePlans] = useState([]);
+  const [roomBlocks, setRoomBlocks] = useState([]);
+  const [allBookings, setAllBookings] = useState([]);
+  const [dates, setDates] = useState({ checkIn: '', checkOut: '' });
+  const [guestDetails, setGuestDetails] = useState({
+    bookingSource: 'Direct',
+    sourceType: '',
+    guestName: '',
+    guestContact: '',
+    guestDob: '',
+    guestCountry: 'India',
+    guestState: '',
+    guestCity: '',
+    email: '',
+    address: '',
+    idType: 'Aadhaar Card',
+    idNumber: '',
+    nationality: 'Indian',
+    companyName: '',
+    companyGst: '',
+    companyAddress: '',
+    arrivalTime: '12:00',
+    specialNote: '',
+    gender: ''
+  });
+  const [paymentDetails, setPaymentDetails] = useState({
+    paymentMode: 'Prepaid',
+    paymentMethod: 'Cash',
+    amountPaid: 0,
+    paymentReference: '',
+    internalNotes: '',
+    status: 'pending'
+  });
+  const [selectedRooms, setSelectedRooms] = useState([]);
+  const [gstMode, setGstMode] = useState('exclusive');
+  const [discountInput, setDiscountInput] = useState('');
+  const [discountTypeInput, setDiscountTypeInput] = useState('percent');
+  const [totalDiscount, setTotalDiscount] = useState(0);
+
+  const isFirstLoadRef = useRef(false);
+
+  // Recalculate cost for selected rooms when dates change
+  useEffect(() => {
+    if (!showEditWizard || selectedRooms.length === 0) return;
+    if (isFirstLoadRef.current) {
+      isFirstLoadRef.current = false;
+      return;
+    }
+    
+    const days = Math.max(1, Math.ceil((new Date(dates.checkOut) - new Date(dates.checkIn)) / (1000 * 60 * 60 * 24)));
+    
+    setSelectedRooms(prev => prev.map(room => {
+      const plan = ratePlans.find(p => p._id === room.ratePlanId);
+      const category = roomTypes.find(c => c._id === room.categoryId);
+      const rate = (plan?.price || category?.basePrice || 3500) * days;
+      
+      let baseCost = rate;
+      let gst = rate * 0.18;
+      let total = rate + gst;
+      
+      if (gstMode === 'inclusive') {
+        baseCost = rate / 1.18;
+        gst = rate - baseCost;
+        total = rate;
+      } else if (gstMode === 'out_of_scope') {
+        baseCost = rate;
+        gst = 0;
+        total = rate;
+      }
+      
+      return {
+        ...room,
+        baseCost: roundToTwo(baseCost),
+        gst: roundToTwo(gst),
+        total: roundToTwo(total)
+      };
+    }));
+  }, [dates.checkIn, dates.checkOut, ratePlans, roomTypes, gstMode, showEditWizard]);
+
+  const handleWizardClose = () => {
+    setShowEditWizard(false);
+    setCurrentStep(1);
+    setSelectedRooms([]);
+  };
+
+  const handleDownloadPDF = async () => {
+    if (!printVoucherRef.current) return;
+    const toastId = toast.loading('Generating PDF...');
+    try {
+      const element = printVoucherRef.current;
+      const canvas = await html2canvas(element, { scale: 2, useCORS: true });
+      const data = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const imgProperties = pdf.getImageProperties(data);
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (imgProperties.height * pdfWidth) / imgProperties.width;
+      
+      pdf.addImage(data, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`BOOKING-${data?.booking?._id || bookingId}.pdf`);
+      toast.success('Voucher Downloaded Successfully', { id: toastId });
+    } catch (error) {
+      toast.error(`Failed to generate PDF: ${error.message || 'Unknown error'}`, { id: toastId });
+      console.error(error);
+    }
+  };
+
+  const handlePrintVoucher = () => {
+    window.print();
+  };
+
+  const roundToTwo = (num) => Math.round((num + Number.EPSILON) * 100) / 100;
+
+  const totalNetCost = selectedRooms.reduce((acc, curr) => acc + curr.baseCost, 0);
+  const totalGST = selectedRooms.reduce((acc, curr) => acc + curr.gst, 0);
+  const payableAmount = Math.max(0, (totalNetCost + totalGST) - totalDiscount);
+
+  const isRoomBlockedForDates = (roomId) => {
+    if (!dates.checkIn || !dates.checkOut) return false;
+    const checkIn = new Date(dates.checkIn); checkIn.setHours(0,0,0,0);
+    const checkOut = new Date(dates.checkOut); checkOut.setHours(0,0,0,0);
+    return roomBlocks.some(b => {
+      const bRoomId = b.roomId?._id || b.roomId;
+      if (bRoomId !== roomId) return false;
+      const bStart = new Date(b.startDate); bStart.setHours(0,0,0,0);
+      const bEnd = new Date(b.endDate); bEnd.setHours(0,0,0,0);
+      return bStart < checkOut && bEnd >= checkIn;
+    });
+  };
+
+  const isRoomBookedForDates = (roomId) => {
+    if (!dates.checkIn || !dates.checkOut) return false;
+    const checkIn = new Date(dates.checkIn); checkIn.setHours(0,0,0,0);
+    const checkOut = new Date(dates.checkOut); checkOut.setHours(0,0,0,0);
+    return allBookings.some(b => {
+      if (b.status === 'cancelled' || b.status === 'checked-out') return false;
+      
+      // Ignore bookings belonging to the group currently being edited
+      const groupKey = data?.booking?.bookingGroupId || data?.booking?._id;
+      if (b.bookingGroupId === groupKey || b._id === groupKey) {
+        return false;
+      }
+
+      const bRoomId = b.roomId?._id || b.roomId;
+      if (bRoomId !== roomId) return false;
+      const bCheckIn = new Date(b.checkInDate); bCheckIn.setHours(0,0,0,0);
+      const bCheckOut = new Date(b.checkOutDate); bCheckOut.setHours(0,0,0,0);
+      return checkIn < bCheckOut && checkOut > bCheckIn;
+    });
+  };
+
+  const handleRoomSelect = (categoryId, roomId) => {
+    if (!roomId) return;
+    if (selectedRooms.find(r => r.roomId === roomId)) return;
+
+    const room = data.allRooms.find(r => r._id === roomId);
+    const category = roomTypes.find(c => c._id === categoryId);
+    const availablePlans = ratePlans.filter(p => p.roomTypeId?._id === categoryId || p.roomTypeId === categoryId);
+    const defaultPlan = availablePlans[0];
+    
+    const days = Math.max(1, Math.ceil((new Date(dates.checkOut) - new Date(dates.checkIn)) / (1000 * 60 * 60 * 24)));
+    const rate = Math.max(0, (defaultPlan?.price || 3500) * days);
+
+    let baseCost = rate;
+    let gst = rate * 0.18;
+    let total = rate + gst;
+
+    if (gstMode === 'inclusive') {
+      baseCost = rate / 1.18;
+      gst = rate - baseCost;
+      total = rate;
+    } else if (gstMode === 'out_of_scope') {
+      baseCost = rate;
+      gst = 0;
+      total = rate;
+    }
+
+    setSelectedRooms([...selectedRooms, {
+      roomId,
+      roomNumber: room?.roomNumber || 'TBD',
+      categoryId,
+      categoryName: category?.name || 'Standard Room',
+      adults: 2,
+      children: 0,
+      infant: 0,
+      ratePlanId: defaultPlan?._id || 'room_only',
+      baseCost: roundToTwo(baseCost),
+      gst: roundToTwo(gst),
+      total: roundToTwo(total)
+    }]);
+  };
+
+  const removeSelectedRoom = (roomId) => {
+    setSelectedRooms(selectedRooms.filter(r => r.roomId !== roomId));
+  };
+
+  const updateSelectedRoom = (roomId, field, value) => {
+    setSelectedRooms(selectedRooms.map(r => {
+      if (r.roomId === roomId) {
+        const updated = { ...r };
+        if (field === 'adults') {
+          updated.adults = Math.max(1, value);
+        } else if (field === 'children') {
+          updated.children = Math.max(0, value);
+        } else if (field === 'infant') {
+          updated.infant = Math.max(0, value);
+        } else if (field === 'ratePlanId') {
+          updated.ratePlanId = value;
+          const plan = ratePlans.find(p => p._id === value);
+          const days = Math.max(1, Math.ceil((new Date(dates.checkOut) - new Date(dates.checkIn)) / (1000 * 60 * 60 * 24)));
+          const rate = Math.max(0, (plan?.price || 3500) * days);
+          if (gstMode === 'inclusive') {
+            updated.baseCost = roundToTwo(rate / 1.18);
+            updated.gst = roundToTwo(rate - updated.baseCost);
+            updated.total = roundToTwo(rate);
+          } else if (gstMode === 'out_of_scope') {
+            updated.baseCost = roundToTwo(rate);
+            updated.gst = 0;
+            updated.total = roundToTwo(rate);
+          } else {
+            updated.baseCost = roundToTwo(rate);
+            updated.gst = roundToTwo(rate * 0.18);
+            updated.total = roundToTwo(rate + updated.gst);
+          }
+        } else if (field === 'customCost') {
+          const val = Math.max(0, value);
+          updated.baseCost = roundToTwo(val);
+          if (gstMode === 'inclusive' || gstMode === 'exclusive') {
+            updated.gst = roundToTwo(val * 0.18);
+            updated.total = roundToTwo(val + updated.gst);
+          } else {
+            updated.gst = 0;
+            updated.total = roundToTwo(val);
+          }
+        } else if (field === 'customGst') {
+          updated.gst = roundToTwo(Math.max(0, value));
+          updated.total = roundToTwo(updated.baseCost + updated.gst);
+        } else if (field === 'customTotal') {
+          const val = Math.max(0, value);
+          updated.total = roundToTwo(val);
+          if (gstMode === 'inclusive' || gstMode === 'exclusive') {
+            updated.baseCost = roundToTwo(val / 1.18);
+            updated.gst = roundToTwo(val - updated.baseCost);
+          } else {
+            updated.baseCost = roundToTwo(val);
+            updated.gst = 0;
+          }
+        }
+        return updated;
+      }
+      return r;
+    }));
+  };
+
+  const applyDiscount = () => {
+    let discAmount = 0;
+    const subtotal = roundToTwo(totalNetCost + totalGST);
+    const inputVal = Number(discountInput || 0);
+    if (discountTypeInput === 'percent') {
+      discAmount = roundToTwo(subtotal * (inputVal / 100));
+    } else {
+      discAmount = roundToTwo(inputVal);
+    }
+    setTotalDiscount(roundToTwo(Math.max(0, Math.min(subtotal, discAmount))));
+    toast.success('Discount applied successfully');
+  };
+
+  const handleGstModeChange = (mode) => {
+    setGstMode(mode);
+    setSelectedRooms(prev => {
+      return prev.map(r => {
+        const rate = r.baseCost + r.gst;
+        const updated = { ...r };
+        if (mode === 'inclusive') {
+          updated.baseCost = roundToTwo(rate / 1.18);
+          updated.gst = roundToTwo(rate - updated.baseCost);
+          updated.total = roundToTwo(rate);
+        } else if (mode === 'out_of_scope') {
+          updated.baseCost = roundToTwo(r.baseCost);
+          updated.gst = 0;
+          updated.total = roundToTwo(r.baseCost);
+        } else {
+          updated.baseCost = roundToTwo(r.baseCost);
+          updated.gst = roundToTwo(r.baseCost * 0.18);
+          updated.total = roundToTwo(r.baseCost + updated.gst);
+        }
+        return updated;
+      });
+    });
+  };
+
+  const handleStartEdit = async () => {
+    const toastId = toast.loading('Loading editing configurations...');
+    try {
+      const [typesRes, plansRes, blocksRes, bookingsRes] = await Promise.all([
+        api.get('/admin/room-types'),
+        api.get('/admin/rate-plans'),
+        api.get('/admin/room-blocks'),
+        api.get('/admin/bookings')
+      ]);
+      setRoomTypes(typesRes.data);
+      setRatePlans(plansRes.data);
+      setRoomBlocks(blocksRes.data);
+      setAllBookings(bookingsRes.data);
+
+      const b = data.booking;
+      
+      // Populate dates
+      setDates({
+        checkIn: new Date(b.checkInDate).toISOString().split('T')[0],
+        checkOut: new Date(b.checkOutDate).toISOString().split('T')[0]
+      });
+
+      // Populate guest details
+      setGuestDetails({
+        bookingSource: b.bookingSource || 'Direct',
+        sourceType: b.comingFrom || '',
+        guestName: b.guestName || '',
+        guestContact: b.guestContact || '',
+        guestDob: b.guestDob ? new Date(b.guestDob).toISOString().split('T')[0] : '',
+        guestCountry: b.guestCountry || 'India',
+        guestState: b.guestState || '',
+        guestCity: b.guestCity || '',
+        email: b.guestEmail || '',
+        address: b.guestAddress || '',
+        idType: b.idProofType || 'Aadhaar Card',
+        idNumber: b.idProofNumber || '',
+        nationality: b.nationality || 'Indian',
+        companyName: b.companyName || '',
+        companyGst: b.companyGst || '',
+        companyAddress: b.companyAddress || '',
+        arrivalTime: b.arrivalTime || '12:00',
+        specialNote: b.specialRequests || '',
+        gender: b.gender || ''
+      });
+
+      // Populate payment details
+      setPaymentDetails({
+        paymentMode: b.paymentMode || 'Prepaid',
+        paymentMethod: b.paymentMethod || 'Cash',
+        amountPaid: b.paidAmount || 0,
+        paymentReference: b.paymentReference || '',
+        internalNotes: b.internalNotes || '',
+        status: b.paymentStatus || 'pending'
+      });
+
+      // Populate gstMode
+      setGstMode(b.gstMode || 'exclusive');
+
+      // Populate selectedRooms
+      const mappedRooms = data.groupBookings.map(gb => {
+        const plan = plansRes.data.find(p => p.planName === gb.mealPlan);
+        return {
+          bookingId: gb._id,
+          roomId: gb.roomId?._id || gb.roomId,
+          roomNumber: gb.roomId?.roomNumber || 'TBD',
+          categoryId: gb.roomId?.roomTypeId?._id || gb.roomId?.roomTypeId || gb.roomTypeId,
+          categoryName: gb.roomId?.roomTypeId?.name || gb.categoryName || 'Standard Room',
+          adults: gb.adults || 2,
+          children: gb.children || 0,
+          infant: gb.infant || 0,
+          ratePlanId: plan?._id || 'room_only',
+          baseCost: gb.cost || 0,
+          gst: gb.gst || 0,
+          total: gb.totalAmount || 0
+        };
+      });
+      setSelectedRooms(mappedRooms);
+
+      // Reconstruct discount
+      const totalDisc = data.groupBookings.reduce((sum, gb) => sum + (gb.discount || 0), 0);
+      setTotalDiscount(totalDisc);
+      setDiscountInput(totalDisc > 0 ? String(totalDisc) : '');
+      setDiscountTypeInput('flat');
+
+      toast.success('Edit configuration loaded!', { id: toastId });
+      isFirstLoadRef.current = true;
+      setShowEditWizard(true);
+      setCurrentStep(1);
+    } catch (e) {
+      toast.error('Failed to load edit wizard: ' + e.message, { id: toastId });
+      console.error(e);
+    }
+  };
+
+  const handleUpdateSubmit = async () => {
+    if (selectedRooms.length === 0) return toast.error('Please select at least one room');
+    if (!guestDetails.guestName || !guestDetails.guestContact) return toast.error('Please provide guest details');
+
+    setIsSavingStep(true);
+    const loadingToast = toast.loading('Updating booking reservation details...');
+    try {
+      const payload = {
+        checkInDate: dates.checkIn,
+        checkOutDate: dates.checkOut,
+        guestDetails: {
+          guestName: guestDetails.guestName,
+          guestContact: guestDetails.guestContact,
+          email: guestDetails.email,
+          address: guestDetails.address,
+          guestDob: guestDetails.guestDob,
+          guestCountry: guestDetails.guestCountry,
+          guestState: guestDetails.guestState,
+          guestCity: guestDetails.guestCity,
+          companyName: guestDetails.companyName,
+          companyGst: guestDetails.companyGst,
+          companyAddress: guestDetails.companyAddress,
+          idType: guestDetails.idType,
+          idNumber: guestDetails.idNumber,
+          nationality: guestDetails.nationality,
+          arrivalTime: guestDetails.arrivalTime,
+          specialNote: guestDetails.specialNote,
+          gender: guestDetails.gender || ''
+        },
+        paymentDetails: {
+          paymentMode: paymentDetails.paymentMode,
+          paymentMethod: paymentDetails.paymentMethod,
+          amountPaid: Number(paymentDetails.amountPaid || 0),
+          paymentReference: paymentDetails.paymentReference || '',
+          internalNotes: paymentDetails.internalNotes || '',
+          status: paymentDetails.status || 'pending'
+        },
+        selectedRooms: selectedRooms.map(room => ({
+          bookingId: room.bookingId,
+          roomId: room.roomId,
+          adults: room.adults || 2,
+          children: room.children || 0,
+          infant: room.infant || 0,
+          mealPlan: ratePlans.find(p => p._id === room.ratePlanId)?.planName || 'Room Only',
+          cost: roundToTwo(room.baseCost),
+          gst: roundToTwo(room.gst),
+          totalAmount: roundToTwo(room.total)
+        })),
+        gstMode: gstMode,
+        totalDiscount: totalDiscount,
+        payableAmount: payableAmount
+      };
+
+      const groupKey = data?.booking?.bookingGroupId || data?.booking?._id;
+      await api.put(`/admin/bookings/group/${groupKey}`, payload);
+      
+      toast.success('Reservation(s) updated successfully', { id: loadingToast });
+      setShowEditWizard(false);
+      fetchDetails();
+      if (onRefresh) onRefresh();
+    } catch (error) {
+      toast.error('Failed to update booking: ' + (error.response?.data?.message || error.message), { id: loadingToast });
+      console.error(error);
+    } finally {
+      setIsSavingStep(false);
+    }
+  };
 
 
   useEffect(() => {
@@ -538,6 +998,14 @@ const BookingDetailsDrawer = ({ bookingId, onClose, onRefresh }) => {
             )}
           </div>
           <div className="flex items-center gap-2">
+            {!isLoading && b && (
+              <button 
+                onClick={handleStartEdit} 
+                className="flex items-center gap-1 px-3 py-1.5 bg-[#3b82f6] hover:bg-[#2563eb] text-white rounded text-xs font-extrabold uppercase transition-all shadow-sm active:scale-95 border border-[#2563eb]/20 cursor-pointer mr-2"
+              >
+                Edit Booking
+              </button>
+            )}
             <button onClick={onClose} className="p-1 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded transition-colors">
               <X size={22} strokeWidth={2.5} />
             </button>
@@ -1581,6 +2049,1086 @@ const BookingDetailsDrawer = ({ bookingId, onClose, onRefresh }) => {
           title={printTitle}
           extraServices={s}
         />
+      )}
+
+      {/* Advanced Booking Edit Wizard Modal */}
+      {showEditWizard && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 font-sans text-slate-300">
+          <div className="absolute inset-0 bg-black/85 backdrop-blur-md" onClick={handleWizardClose}></div>
+          <div className="relative bg-[#0a0b0e] border border-white/10 rounded-3xl w-full max-w-7xl max-h-[95vh] flex flex-col shadow-2xl animate-in fade-in zoom-in-95 duration-300 z-[80]">
+            
+            {/* Modal Header */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center p-5 md:p-6 border-b border-white/5 bg-[#13151a] rounded-t-3xl gap-4">
+              <div className="flex justify-between items-center w-full md:w-auto">
+                <h3 className="text-lg md:text-xl font-bold text-white flex items-center">
+                  <CalendarDays className="mr-3 text-blue-500 shrink-0" /> Edit Booking Reservation
+                </h3>
+                <button onClick={handleWizardClose} className="md:hidden p-2 text-slate-400 hover:text-white transition-colors bg-white/5 rounded-full">
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
+                <div className="w-full sm:w-44 text-slate-800">
+                  <DatePicker 
+                    label="Check In" 
+                    selected={dates.checkIn} 
+                    minDate={undefined}
+                    onChange={(dateStr) => {
+                      const nextDay = new Date(new Date(dateStr).getTime() + 86400000).toISOString().split('T')[0];
+                      setDates(prev => {
+                        const newDates = { ...prev, checkIn: dateStr };
+                        if (new Date(prev.checkOut) <= new Date(dateStr)) {
+                          newDates.checkOut = nextDay;
+                        }
+                        return newDates;
+                      });
+                    }}
+                  />
+                </div>
+                <span className="text-slate-500 hidden sm:inline self-end mb-3">→</span>
+                <div className="w-full sm:w-44 text-slate-800">
+                  <DatePicker 
+                    label="Check Out" 
+                    selected={dates.checkOut} 
+                    minDate={undefined}
+                    onChange={(dateStr) => {
+                      setDates(prev => ({ ...prev, checkOut: dateStr }));
+                    }}
+                  />
+                </div>
+                <button onClick={handleWizardClose} className="hidden md:block p-2.5 ml-2 text-slate-400 hover:text-white transition-colors bg-white/5 rounded-full self-end mb-1">
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            {/* Stepper Progress Bar */}
+            {currentStep < 4 && (
+              <div className="px-6 py-4 bg-[#111317] border-b border-white/5 flex items-center justify-between overflow-x-auto gap-4 custom-scrollbar">
+                {[
+                  { step: 1, label: 'Rooms & Billing', icon: Search },
+                  { step: 2, label: 'Guest Details', icon: User },
+                  { step: 3, label: 'Payment', icon: CreditCard }
+                ].map((s, idx, arr) => (
+                  <React.Fragment key={s.step}>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-extrabold text-xs border transition-all duration-300 ${
+                        currentStep === s.step
+                          ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-500/20 scale-105 font-black ring-4 ring-blue-500/15'
+                          : currentStep > s.step
+                          ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400'
+                          : 'bg-[#0a0b0e] border-white/10 text-slate-500'
+                      }`}>
+                        {currentStep > s.step ? '✓' : s.step}
+                      </div>
+                      <span className={`text-xs font-bold uppercase tracking-wider ${
+                        currentStep === s.step ? 'text-white' : 'text-slate-400'
+                      }`}>
+                        {s.label}
+                      </span>
+                    </div>
+                    {idx < arr.length - 1 && (
+                      <div className={`h-[2px] min-w-[20px] flex-1 transition-all duration-300 ${
+                        currentStep > s.step ? 'bg-emerald-500/40' : 'bg-white/5'
+                      }`} />
+                    )}
+                  </React.Fragment>
+                ))}
+              </div>
+            )}
+
+            {/* Modal Body */}
+            <div className="overflow-y-auto flex-1 p-6 space-y-4 custom-scrollbar text-slate-300 animate-in fade-in duration-300">
+              
+              {/* STEP 1: ROOMS & BILLING */}
+              {currentStep === 1 && (
+                <div className="border border-white/10 rounded-2xl overflow-hidden bg-[#13151a] animate-in fade-in zoom-in-95 duration-200">
+                  <div className="p-0 flex flex-col lg:flex-row divide-y lg:divide-y-0 lg:divide-x divide-white/10">
+                    {/* Left: Category List */}
+                    <div className="w-full lg:w-[25%] xl:w-[20%]">
+                      <table className="w-full text-sm text-left">
+                        <thead className="bg-[#1a1d24]">
+                          <tr>
+                            <th className="p-3 text-slate-300 font-medium text-xs uppercase tracking-wider">Room Category</th>
+                            <th className="p-3 text-slate-300 font-medium border-l border-white/5 text-xs uppercase tracking-wider">Rooms</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                          {roomTypes.map(category => {
+                            const availableRooms = (data?.allRooms || []).filter(r => {
+                              const isThisCategory = r.roomTypeId?._id === category._id || r.roomTypeId === category._id;
+                              const isPermanentlyUnavailable = r.status === 'maintenance' || r.status === 'cleaning';
+                              return isThisCategory && !isPermanentlyUnavailable && !isRoomBlockedForDates(r._id) && !isRoomBookedForDates(r._id);
+                            });
+                            return (
+                              <tr key={category._id} className="hover:bg-white/5">
+                                <td className="p-3 text-white text-xs font-semibold">{category.name}</td>
+                                <td className="p-2 border-l border-white/5">
+                                  {availableRooms.length === 0 ? (
+                                    <span className="text-[10px] font-bold text-red-400 px-2 uppercase tracking-wide">Sold Out</span>
+                                  ) : (
+                                    <select 
+                                      onChange={(e) => handleRoomSelect(category._id, e.target.value)}
+                                      className="w-full bg-[#0a0b0e] border border-white/10 rounded p-1.5 text-slate-300 outline-none text-xs"
+                                    >
+                                      <option value="">Select</option>
+                                      {availableRooms.map(r => (
+                                        <option key={r._id} value={r._id} disabled={selectedRooms.some(sr => sr.roomId === r._id)}>
+                                          Room {r.roomNumber}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    
+                    {/* Right: Selected Rooms Configuration */}
+                    <div className="w-full lg:w-[75%] xl:w-[80%] bg-[#0f1115] flex flex-col min-h-[350px]">
+                      
+                      {/* Segmented GST Mode Toggle */}
+                      <div className="p-3 bg-[#13151a]/80 backdrop-blur-md border-b border-white/5 flex flex-col sm:flex-row justify-between items-center gap-3">
+                        <span className="text-xs font-black uppercase text-slate-300 tracking-wider">Rooms Billing Sheet</span>
+                        <div className="flex items-center bg-[#0a0b0e] p-1 rounded-xl border border-white/10 gap-1">
+                          {[
+                            { id: 'inclusive', label: 'GST Inclusive' },
+                            { id: 'exclusive', label: 'GST Exclusive' },
+                            { id: 'out_of_scope', label: 'Out of Scope' }
+                          ].map(mode => (
+                            <button
+                              key={mode.id}
+                              type="button"
+                              onClick={() => handleGstModeChange(mode.id)}
+                              className={`px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-wider font-extrabold transition-all duration-200 ${
+                                gstMode === mode.id 
+                                  ? 'bg-blue-600 text-white shadow-md shadow-blue-500/10' 
+                                  : 'text-slate-400 hover:text-white'
+                              }`}
+                            >
+                              {mode.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {selectedRooms.length === 0 ? (
+                        <div className="h-full flex items-center justify-center text-slate-500 p-8 min-h-[350px] text-center text-sm font-medium">
+                          Select a room from the left category panel to configure billing.
+                        </div>
+                      ) : (
+                        <div className="flex flex-col flex-1 relative">
+                          
+                          {/* Desktop/Tablet Table Layout */}
+                          <div className="hidden md:block overflow-y-auto max-h-[45vh] flex-1 custom-scrollbar">
+                            <table className="w-full text-xs text-left border-collapse table-fixed">
+                              <thead className="bg-[#1a1d24] text-slate-400 uppercase tracking-wider border-b border-white/10 sticky top-0 z-20">
+                                <tr>
+                                  <th className="px-2 py-3 border-r border-white/5 w-[18%]">Room Category</th>
+                                  <th className="px-2 py-3 border-r border-white/5 text-center w-[8%]">Adults</th>
+                                  <th className="px-2 py-3 border-r border-white/5 text-center w-[10%]">Children</th>
+                                  <th className="px-2 py-3 border-r border-white/5 text-center w-[10%]">Infants</th>
+                                  <th className="px-2 py-3 border-r border-white/5 w-[12%]">Meal Plan</th>
+                                  <th className="px-2 py-3 border-r border-white/5 text-right w-[13%]">Cost (₹)</th>
+                                  <th className="px-2 py-3 border-r border-white/5 text-right w-[11%]">GST (18%)</th>
+                                  <th className="px-2 py-3 text-right w-[14%]">Total (₹)</th>
+                                  <th className="p-1 w-[4%]"></th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-white/5">
+                                {selectedRooms.map(room => (
+                                  <tr key={room.roomId} className="text-slate-300 hover:bg-white/[0.01] transition-colors">
+                                    <td className="px-2 py-2.5 font-semibold text-white border-r border-white/5">
+                                      <div className="truncate max-w-[120px]">{room.categoryName}</div>
+                                      <span className="text-[9px] text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded mt-1 inline-block font-mono font-bold">Room {room.roomNumber}</span>
+                                    </td>
+                                    <td className="p-1 border-r border-white/5 text-center">
+                                      <select 
+                                        value={room.adults} 
+                                        onChange={(e) => updateSelectedRoom(room.roomId, 'adults', Number(e.target.value))} 
+                                        className="bg-[#13151a] border border-white/10 rounded-lg py-1 px-1.5 outline-none w-14 text-center text-white focus:border-blue-500 text-xs font-semibold animate-none"
+                                      >
+                                        {[1, 2, 3, 4, 5, 6].map(n => <option key={n} value={n}>{n}</option>)}
+                                      </select>
+                                    </td>
+                                    <td className="p-1 border-r border-white/5 text-center">
+                                      <select 
+                                        value={room.children || 0} 
+                                        onChange={(e) => updateSelectedRoom(room.roomId, 'children', Number(e.target.value))} 
+                                        className="bg-[#13151a] border border-white/10 rounded-lg py-1 px-1.5 outline-none w-14 text-center text-white focus:border-blue-500 text-xs font-semibold animate-none"
+                                      >
+                                        {[0, 1, 2, 3, 4].map(n => <option key={n} value={n}>{n}</option>)}
+                                      </select>
+                                    </td>
+                                    <td className="p-1 border-r border-white/5 text-center">
+                                      <select 
+                                        value={room.infant || 0} 
+                                        onChange={(e) => updateSelectedRoom(room.roomId, 'infant', Number(e.target.value))} 
+                                        className="bg-[#13151a] border border-white/10 rounded-lg py-1 px-1.5 outline-none w-14 text-center text-white focus:border-blue-500 text-xs font-semibold animate-none"
+                                      >
+                                        {[0, 1, 2, 3].map(n => <option key={n} value={n}>{n}</option>)}
+                                      </select>
+                                    </td>
+                                    <td className="p-1 border-r border-white/5">
+                                      <select 
+                                        value={room.ratePlanId} 
+                                        onChange={(e) => updateSelectedRoom(room.roomId, 'ratePlanId', e.target.value)} 
+                                        className="bg-[#13151a] border border-white/10 rounded-lg py-1 px-1 outline-none w-full text-white focus:border-blue-500 text-xs truncate font-semibold"
+                                      >
+                                        {ratePlans.filter(p => p.roomTypeId?._id === room.categoryId || p.roomTypeId === room.categoryId).map(p => (
+                                          <option key={p._id} value={p._id}>{p.planName}</option>
+                                        ))}
+                                        <option value="room_only">Room Only</option>
+                                      </select>
+                                    </td>
+                                    <td className="p-1 border-r border-white/5 text-right">
+                                      <input 
+                                        type="number" 
+                                        value={Number(room.baseCost.toFixed(2))} 
+                                        onChange={(e) => updateSelectedRoom(room.roomId, 'customCost', Math.max(0, Number(e.target.value)))}
+                                        className="bg-[#13151a] border border-white/15 rounded-lg py-1 px-1.5 outline-none w-full text-right text-white focus:border-blue-500 font-bold"
+                                      />
+                                    </td>
+                                    <td className="p-1 border-r border-white/5 text-right">
+                                      <input 
+                                        type="number" 
+                                        value={Number(room.gst.toFixed(2))} 
+                                        disabled={gstMode === 'out_of_scope'}
+                                        onChange={(e) => updateSelectedRoom(room.roomId, 'customGst', Math.max(0, Number(e.target.value)))}
+                                        className="bg-[#13151a] border border-white/15 rounded-lg py-1 px-1.5 outline-none w-full text-right text-white focus:border-blue-500 disabled:opacity-30 disabled:cursor-not-allowed font-bold"
+                                      />
+                                    </td>
+                                    <td className="p-1 text-right">
+                                      <input 
+                                        type="number" 
+                                        value={Number(room.total.toFixed(2))} 
+                                        onChange={(e) => updateSelectedRoom(room.roomId, 'customTotal', Math.max(0, Number(e.target.value)))}
+                                        className="bg-[#13151a] border border-emerald-500/20 rounded-lg py-1 px-1.5 outline-none w-full text-right text-emerald-400 focus:border-emerald-500 font-bold"
+                                      />
+                                    </td>
+                                    <td className="p-1 text-center">
+                                      <button 
+                                        onClick={() => removeSelectedRoom(room.roomId)} 
+                                        className="text-red-400 hover:text-red-300 transition-colors p-1 hover:bg-red-500/10 rounded-full cursor-pointer"
+                                      >
+                                        <X size={14}/>
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+
+                                {/* Table Summary Rows */}
+                                <tr className="bg-[#16181f] font-bold text-slate-300 border-t border-white/15">
+                                  <td className="px-2 py-3 border-r border-white/5">Rooms: <span className="text-white">{selectedRooms.length}</span></td>
+                                  <td className="px-2 py-3 border-r border-white/5 text-center">Adults: <span className="text-white">{selectedRooms.reduce((acc, r) => acc + (r.adults || 0), 0)}</span></td>
+                                  <td className="px-2 py-3 border-r border-white/5 text-center" colSpan={2}>Child: <span className="text-white">{selectedRooms.reduce((acc, r) => acc + (r.children || 0), 0)}</span></td>
+                                  <td className="px-2 py-3 border-r border-white/5"></td>
+                                  <td className="px-2 py-3 border-r border-white/5" colSpan={2}>Net Cost</td>
+                                  <td className="px-2 py-3 text-right font-black text-white text-sm" colSpan={2}>₹{totalNetCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                </tr>
+
+                                <tr className="bg-[#13151a] font-bold text-slate-300 border-t border-white/5">
+                                  <td className="px-2 py-3" colSpan={7}>Total GST</td>
+                                  <td className="px-2 py-3 text-right font-black text-slate-300" colSpan={2}>₹{totalGST.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                </tr>
+
+                                <tr className="bg-[#16181f] font-bold text-slate-300 border-t border-white/5">
+                                  <td className="px-2 py-3 border-r border-white/5" colSpan={2}>Total Discount</td>
+                                  <td className="p-1 border-r border-white/5 align-middle" colSpan={5}>
+                                    <div className="flex items-center gap-2 max-w-xs">
+                                      <input 
+                                        type="number"
+                                        placeholder="Value"
+                                        value={discountInput}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          if (val === '') {
+                                            setDiscountInput('');
+                                          } else {
+                                            setDiscountInput(Math.max(0, Number(val)));
+                                          }
+                                        }}
+                                        className="bg-[#0a0b0e] border border-white/10 rounded-lg p-1.5 outline-none w-20 text-white text-xs font-semibold focus:border-blue-500"
+                                      />
+                                      <select 
+                                        value={discountTypeInput}
+                                        onChange={(e) => setDiscountTypeInput(e.target.value)}
+                                        className="bg-[#0a0b0e] border border-white/10 rounded-lg p-1.5 outline-none text-white text-xs focus:border-blue-500 font-semibold"
+                                      >
+                                        <option value="percent">Percent (%)</option>
+                                        <option value="flat">Flat (₹)</option>
+                                      </select>
+                                      <button
+                                        type="button"
+                                        onClick={applyDiscount}
+                                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-1 px-3 rounded-lg text-xs transition-colors shadow-md shadow-emerald-500/10 active:scale-95 shrink-0 cursor-pointer"
+                                      >
+                                        Add
+                                      </button>
+                                    </div>
+                                  </td>
+                                  <td className="px-2 py-3 text-right font-black text-rose-400" colSpan={2}>- ₹{totalDiscount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                </tr>
+
+                                <tr className="bg-[#1a1d24] font-black border-t border-white/15 text-white shadow-[0_-8px_20px_rgba(0,0,0,0.6)]">
+                                  <td className="px-2 py-4 text-sm" colSpan={7}>Payable Amount</td>
+                                  <td className="px-2 py-4 text-right text-base md:text-lg text-emerald-400 bg-emerald-500/10 shadow-inner rounded-br-2xl font-black" colSpan={2}>
+                                    ₹{payableAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {/* Mobile Stacked Card Layout */}
+                          <div className="md:hidden space-y-4 p-4 max-h-[40vh] overflow-y-auto custom-scrollbar bg-black/10">
+                            {selectedRooms.map(room => (
+                              <div key={room.roomId} className="bg-[#13151a] border border-white/10 rounded-xl p-4 space-y-3 relative shadow-lg">
+                                <button 
+                                  onClick={() => removeSelectedRoom(room.roomId)}
+                                  className="absolute top-3 right-3 text-red-400 p-1.5 bg-red-500/10 hover:bg-red-500/20 rounded-full transition-colors cursor-pointer border-0"
+                                >
+                                  <X size={14} />
+                                </button>
+                                
+                                <div>
+                                  <h4 className="font-bold text-white text-sm">{room.categoryName}</h4>
+                                  <span className="text-[10px] text-blue-400 font-mono font-bold">Room {room.roomNumber}</span>
+                                </div>
+
+                                <div className="grid grid-cols-3 gap-2 text-xs">
+                                  <div>
+                                    <label className="block text-slate-500 text-[10px] uppercase font-bold mb-1">Adults</label>
+                                    <select 
+                                      value={room.adults} 
+                                      onChange={(e) => updateSelectedRoom(room.roomId, 'adults', Number(e.target.value))}
+                                      className="w-full bg-[#0a0b0e] border border-white/10 rounded-lg p-1.5 text-white outline-none font-semibold text-xs"
+                                    >
+                                      {[1, 2, 3, 4, 5, 6].map(n => <option key={n} value={n}>{n}</option>)}
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-slate-500 text-[10px] uppercase font-bold mb-1">Child</label>
+                                    <select 
+                                      value={room.children || 0} 
+                                      onChange={(e) => updateSelectedRoom(room.roomId, 'children', Number(e.target.value))}
+                                      className="w-full bg-[#0a0b0e] border border-white/10 rounded-lg p-1.5 text-white outline-none font-semibold text-xs"
+                                    >
+                                      {[0, 1, 2, 3, 4].map(n => <option key={n} value={n}>{n}</option>)}
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-slate-500 text-[10px] uppercase font-bold mb-1">Infant</label>
+                                    <select 
+                                      value={room.infant || 0} 
+                                      onChange={(e) => updateSelectedRoom(room.roomId, 'infant', Number(e.target.value))}
+                                      className="w-full bg-[#0a0b0e] border border-white/10 rounded-lg p-1.5 text-white outline-none font-semibold text-xs"
+                                    >
+                                      {[0, 1, 2, 3].map(n => <option key={n} value={n}>{n}</option>)}
+                                    </select>
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2 text-xs">
+                                  <div>
+                                    <label className="block text-slate-500 text-[10px] uppercase font-bold mb-1">Meal Plan</label>
+                                    <select 
+                                      value={room.ratePlanId} 
+                                      onChange={(e) => updateSelectedRoom(room.roomId, 'ratePlanId', e.target.value)}
+                                      className="w-full bg-[#0a0b0e] border border-white/10 rounded-lg p-1.5 text-white outline-none truncate font-semibold text-xs"
+                                    >
+                                      {ratePlans.filter(p => p.roomTypeId?._id === room.categoryId || p.roomTypeId === room.categoryId).map(p => (
+                                        <option key={p._id} value={p._id}>{p.planName}</option>
+                                      ))}
+                                      <option value="room_only">Room Only</option>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-slate-500 text-[10px] uppercase font-bold mb-1">Cost (₹)</label>
+                                    <input 
+                                      type="number" 
+                                      value={room.baseCost} 
+                                      onChange={(e) => updateSelectedRoom(room.roomId, 'customCost', Math.max(0, Number(e.target.value)))}
+                                      className="w-full bg-[#0a0b0e] border border-white/10 rounded-lg p-1.5 text-white outline-none text-right font-bold text-xs"
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2 text-xs border-t border-white/5 pt-2">
+                                  <div className="flex justify-between items-center gap-1">
+                                    <span className="text-slate-500 text-[10px] uppercase font-bold">GST</span>
+                                    <input 
+                                      type="number" 
+                                      value={Number(room.gst.toFixed(2))} 
+                                      disabled={gstMode === 'out_of_scope'}
+                                      onChange={(e) => updateSelectedRoom(room.roomId, 'customGst', Math.max(0, Number(e.target.value)))}
+                                      className="bg-[#0a0b0e] border border-white/10 rounded p-1 w-20 text-white text-right outline-none disabled:opacity-30 disabled:cursor-not-allowed font-bold"
+                                    />
+                                  </div>
+                                  <div className="flex justify-between items-center gap-1">
+                                    <span className="text-slate-500 text-[10px] uppercase font-bold">Total</span>
+                                    <input 
+                                      type="number" 
+                                      value={Number(room.total.toFixed(2))} 
+                                      onChange={(e) => updateSelectedRoom(room.roomId, 'customTotal', Math.max(0, Number(e.target.value)))}
+                                      className="bg-[#0a0b0e] border border-emerald-500/20 rounded p-1 w-24 text-emerald-400 text-right outline-none font-bold"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+
+                            {/* Mobile summary layout */}
+                            <div className="bg-[#16181f] border border-white/5 rounded-xl p-4 space-y-2 mt-4 text-xs font-semibold">
+                              <div className="flex justify-between">
+                                <span className="text-slate-400">Total Rooms</span>
+                                <span className="text-white font-bold">{selectedRooms.length}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-slate-400">Net Cost</span>
+                                <span className="text-white font-bold">₹{totalNetCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-slate-400">Total GST</span>
+                                <span className="text-white font-bold">₹{totalGST.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-slate-400">Total Discount</span>
+                                <span className="text-rose-400 font-bold">- ₹{totalDiscount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                              </div>
+                              <div className="flex justify-between items-center border-t border-white/5 pt-2 mt-2">
+                                <span className="text-slate-300 font-bold">Payable</span>
+                                <span className="text-base font-black text-emerald-400">₹{payableAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 2: GUEST DETAILS */}
+              {currentStep === 2 && (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-3 duration-300">
+                  <div className="lg:col-span-2 space-y-5 bg-[#111317] border border-white/5 p-6 rounded-2xl max-h-[70vh] overflow-y-auto custom-scrollbar">
+                    <h4 className="text-white font-bold text-base border-b border-white/5 pb-3 uppercase tracking-wider text-xs text-slate-300">Guest Information Profile</h4>
+                    
+                    {/* Row 1: Basic Info */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div>
+                        <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1.5 tracking-wider">Guest Full Name <span className="text-rose-500">*</span></label>
+                        <input 
+                          type="text" 
+                          value={guestDetails.guestName} 
+                          onChange={e => setGuestDetails({...guestDetails, guestName: e.target.value})} 
+                          className="w-full bg-[#0a0b0e] border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 text-sm font-semibold placeholder-slate-600 transition" 
+                          placeholder="e.g. John Doe" 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1.5 tracking-wider">Mobile Number <span className="text-rose-500">*</span></label>
+                        <input 
+                          type="text" 
+                          value={guestDetails.guestContact} 
+                          onChange={e => setGuestDetails({...guestDetails, guestContact: e.target.value})} 
+                          className="w-full bg-[#0a0b0e] border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 text-sm font-semibold placeholder-slate-600 transition" 
+                          placeholder="e.g. +91 98765 43210" 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1.5 tracking-wider">Gender</label>
+                        <select 
+                          value={guestDetails.gender} 
+                          onChange={e => setGuestDetails({...guestDetails, gender: e.target.value})} 
+                          className="w-full bg-[#0a0b0e] border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 text-sm font-semibold transition cursor-pointer"
+                        >
+                          <option value="">Select Gender</option>
+                          <option value="Male">Male</option>
+                          <option value="Female">Female</option>
+                          <option value="Other">Other</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1.5 tracking-wider">Date of Birth</label>
+                        <input 
+                          type="date" 
+                          value={guestDetails.guestDob} 
+                          onChange={e => setGuestDetails({...guestDetails, guestDob: e.target.value})} 
+                          className="w-full bg-[#0a0b0e] border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 text-sm font-semibold transition" 
+                        />
+                      </div>
+                    </div>
+
+                    {/* Row 2: Location Details */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1.5 tracking-wider">Country</label>
+                        <input 
+                          type="text" 
+                          value={guestDetails.guestCountry} 
+                          onChange={e => setGuestDetails({...guestDetails, guestCountry: e.target.value})} 
+                          className="w-full bg-[#0a0b0e] border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 text-sm font-semibold placeholder-slate-600 transition" 
+                          placeholder="Country" 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1.5 tracking-wider">State</label>
+                        <input 
+                          type="text" 
+                          value={guestDetails.guestState} 
+                          onChange={e => setGuestDetails({...guestDetails, guestState: e.target.value})} 
+                          className="w-full bg-[#0a0b0e] border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 text-sm font-semibold placeholder-slate-600 transition" 
+                          placeholder="State" 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1.5 tracking-wider">City</label>
+                        <input 
+                          type="text" 
+                          value={guestDetails.guestCity} 
+                          onChange={e => setGuestDetails({...guestDetails, guestCity: e.target.value})} 
+                          className="w-full bg-[#0a0b0e] border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 text-sm font-semibold placeholder-slate-600 transition" 
+                          placeholder="City" 
+                        />
+                      </div>
+                    </div>
+
+                    {/* Row 3: Corporate Details */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1.5 tracking-wider">Company Name</label>
+                        <input 
+                          type="text" 
+                          value={guestDetails.companyName} 
+                          onChange={e => setGuestDetails({...guestDetails, companyName: e.target.value})} 
+                          className="w-full bg-[#0a0b0e] border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 text-sm font-semibold placeholder-slate-600 transition" 
+                          placeholder="Company Name" 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1.5 tracking-wider">Company GST</label>
+                        <input 
+                          type="text" 
+                          value={guestDetails.companyGst} 
+                          onChange={e => setGuestDetails({...guestDetails, companyGst: e.target.value})} 
+                          className="w-full bg-[#0a0b0e] border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 text-sm font-semibold placeholder-slate-600 transition" 
+                          placeholder="Company GST" 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1.5 tracking-wider">Company Address</label>
+                        <input 
+                          type="text" 
+                          value={guestDetails.companyAddress} 
+                          onChange={e => setGuestDetails({...guestDetails, companyAddress: e.target.value})} 
+                          className="w-full bg-[#0a0b0e] border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 text-sm font-semibold placeholder-slate-600 transition" 
+                          placeholder="Company Address" 
+                        />
+                      </div>
+                    </div>
+
+                    {/* Row 4: ID & Email */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1.5 tracking-wider">Email Address</label>
+                        <input 
+                          type="email" 
+                          value={guestDetails.email} 
+                          onChange={e => setGuestDetails({...guestDetails, email: e.target.value})} 
+                          className="w-full bg-[#0a0b0e] border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 text-sm font-semibold placeholder-slate-600 transition" 
+                          placeholder="e.g. john@example.com" 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1.5 tracking-wider">ID Proof Type</label>
+                        <select 
+                          value={guestDetails.idType} 
+                          onChange={e => setGuestDetails({...guestDetails, idType: e.target.value})} 
+                          className="w-full bg-[#0a0b0e] border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 text-sm font-semibold transition cursor-pointer"
+                        >
+                          <option>Aadhaar Card</option>
+                          <option>Passport</option>
+                          <option>Driving License</option>
+                          <option>Voter ID</option>
+                          <option>Other</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1.5 tracking-wider">ID Proof Number</label>
+                        <input 
+                          type="text" 
+                          value={guestDetails.idNumber} 
+                          onChange={e => setGuestDetails({...guestDetails, idNumber: e.target.value})} 
+                          className="w-full bg-[#0a0b0e] border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 text-sm font-semibold placeholder-slate-600 transition" 
+                          placeholder="ID Document ID Number" 
+                        />
+                      </div>
+                    </div>
+
+                    {/* Row 5: Booking Source */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1.5 tracking-wider">Booking Source</label>
+                        <select value={guestDetails.bookingSource} onChange={e => setGuestDetails({...guestDetails, bookingSource: e.target.value})} className="w-full bg-[#0a0b0e] border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 text-sm font-semibold transition cursor-pointer">
+                          <option>Direct</option>
+                          <option>Walk-In</option>
+                          <option>OTA (Booking.com, etc)</option>
+                          <option>Corporate</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1.5 tracking-wider">Source Type / ID</label>
+                        <input type="text" value={guestDetails.sourceType} onChange={e => setGuestDetails({...guestDetails, sourceType: e.target.value})} className="w-full bg-[#0a0b0e] border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 text-sm font-semibold placeholder-slate-600 transition" placeholder="e.g. BKG-12345" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1.5 tracking-wider">Est. Arrival Time</label>
+                        <input type="time" value={guestDetails.arrivalTime} onChange={e => setGuestDetails({...guestDetails, arrivalTime: e.target.value})} className="w-full bg-[#0a0b0e] border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 text-sm font-semibold transition" />
+                      </div>
+                    </div>
+                    
+                    {/* Notes */}
+                    <div>
+                      <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1.5 tracking-wider">Special Requests / Notes</label>
+                      <textarea value={guestDetails.specialNote} onChange={e => setGuestDetails({...guestDetails, specialNote: e.target.value})} className="w-full bg-[#0a0b0e] border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 text-sm font-semibold h-20 resize-none transition" placeholder="Allergies, bedding configurations, early check-in, etc."></textarea>
+                    </div>
+                  </div>
+
+                  {/* Right Panel Summary */}
+                  <div className="space-y-6">
+                    <div className="bg-[#111317] border border-white/5 rounded-2xl p-5 shadow-lg">
+                      <h4 className="text-white font-bold text-xs uppercase tracking-wider border-b border-white/5 pb-3 mb-4 text-slate-300">Room Occupancy Mapping</h4>
+                      <div className="space-y-3 max-h-[25vh] overflow-y-auto custom-scrollbar">
+                        {selectedRooms.map(room => (
+                          <div key={room.roomId} className="bg-[#0a0b0e]/50 border border-white/5 rounded-xl p-3 flex justify-between items-center shadow-inner">
+                            <div>
+                              <p className="text-xs font-black text-white">Room {room.roomNumber}</p>
+                              <p className="text-[9px] text-slate-500 uppercase font-bold tracking-wide">{room.categoryName}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-[11px] text-slate-300 font-bold">{room.adults} Adults {room.children > 0 && `, ${room.children} Child`}</p>
+                              <span className="text-[9px] text-blue-400 font-black font-mono uppercase bg-blue-500/10 px-1.5 py-0.5 rounded inline-block mt-0.5">{ratePlans.find(p => p._id === room.ratePlanId)?.planName || 'Room Only'}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="bg-[#111317] border border-white/5 rounded-2xl p-5 shadow-lg">
+                      <h4 className="text-white font-bold text-xs uppercase tracking-wider border-b border-white/5 pb-3 mb-4 text-slate-300">Selected Billing Overview</h4>
+                      <div className="space-y-3 text-xs md:text-sm font-semibold">
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Total Selected Rooms</span>
+                          <span className="text-white font-extrabold">{selectedRooms.length}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Total Net Cost</span>
+                          <span className="text-white">₹{totalNetCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Total GST Amount</span>
+                          <span className="text-white">₹{totalGST.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                        <div className="flex justify-between border-t border-white/5 pt-3">
+                          <span className="text-slate-300">Discount applied</span>
+                          <span className="text-rose-400 font-bold">- ₹{totalDiscount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                        <div className="flex justify-between items-center border-t border-white/10 pt-3 mt-3">
+                          <span className="text-slate-200 font-black text-sm uppercase">Total Payable</span>
+                          <span className="text-xl font-black text-emerald-400 tracking-wide">₹{payableAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 3: PAYMENT DETAILS */}
+              {currentStep === 3 && (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-3 duration-300">
+                  {/* Left: Billing Configuration Form */}
+                  <div className="lg:col-span-2 space-y-6 bg-[#111317] border border-white/5 p-6 rounded-2xl">
+                    <div className="flex justify-between items-center border-b border-white/5 pb-3">
+                      <h4 className="text-white font-bold text-base uppercase tracking-wider text-xs text-slate-300">Billing & Payment Configuration</h4>
+                      <span className="text-[10px] uppercase font-bold px-2.5 py-1 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">{paymentDetails.paymentMode}</span>
+                    </div>
+
+                    {/* Payment Status Selector */}
+                    <div>
+                      <label className="block text-[10px] uppercase font-bold text-slate-400 mb-2.5 tracking-wider">Payment Status</label>
+                      <div className="flex bg-[#0a0b0e] p-1.5 rounded-xl border border-white/10 gap-2 w-full">
+                        {['Prepaid', 'Pay At Hotel', 'Bill To Company'].map(mode => (
+                          <button
+                            key={mode}
+                            type="button"
+                            onClick={() => {
+                              const newAmount = mode === 'Prepaid' ? payableAmount : 0;
+                              setPaymentDetails({ ...paymentDetails, paymentMode: mode, amountPaid: newAmount, status: newAmount >= payableAmount ? 'paid' : newAmount > 0 ? 'partial' : 'pending' });
+                            }}
+                            className={`flex-1 py-2.5 rounded-lg text-xs uppercase tracking-wider font-extrabold transition-all duration-300 ${
+                              paymentDetails.paymentMode === mode 
+                                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20 scale-[1.02]' 
+                                : 'text-slate-400 hover:text-white hover:bg-white/5'
+                            }`}
+                          >
+                            {mode}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {paymentDetails.paymentMode !== 'Bill To Company' && (
+                      <div>
+                        <label className="block text-[10px] uppercase font-bold text-slate-400 mb-2.5 tracking-wider">Payment Method</label>
+                        <div className="flex flex-wrap gap-2.5">
+                          {['Cash', 'Card', 'UPI', 'Bank Transfer', 'Pay Later'].map(method => (
+                            <button 
+                              key={method}
+                              type="button"
+                              onClick={() => setPaymentDetails({...paymentDetails, paymentMethod: method})}
+                              className={`px-5 py-2.5 rounded-xl text-xs uppercase tracking-wider font-extrabold transition-all duration-300 border ${
+                                paymentDetails.paymentMethod === method 
+                                  ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-500/20 animate-none' 
+                                  : 'bg-[#0a0b0e] border-white/10 text-slate-400 hover:text-white'
+                              }`}
+                            >
+                              {method}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Dynamic Form based on Mode */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5 border-t border-white/5 pt-5">
+                      
+                      {paymentDetails.paymentMode === 'Bill To Company' ? (
+                        <>
+                          <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-5">
+                            <div>
+                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1.5 tracking-wider">Company Name</label>
+                              <input type="text" value={guestDetails.companyName} onChange={e => setGuestDetails({...guestDetails, companyName: e.target.value})} className="w-full bg-[#0a0b0e] border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 text-sm font-semibold transition" placeholder="e.g. Acme Corp" />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1.5 tracking-wider">Company GST Number</label>
+                              <input type="text" value={guestDetails.companyGst} onChange={e => setGuestDetails({...guestDetails, companyGst: e.target.value})} className="w-full bg-[#0a0b0e] border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 text-sm font-semibold transition" placeholder="e.g. 29ABCDE1234F1Z5" />
+                            </div>
+                            <div className="md:col-span-2">
+                              <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1.5 tracking-wider">Company Address</label>
+                              <input type="text" value={guestDetails.companyAddress} onChange={e => setGuestDetails({...guestDetails, companyAddress: e.target.value})} className="w-full bg-[#0a0b0e] border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 text-sm font-semibold transition" placeholder="Billing Address" />
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <div>
+                          <label className="block text-[10px] uppercase font-bold text-slate-400 mb-2 tracking-wider">
+                            {paymentDetails.paymentMode === 'Prepaid' ? 'Collected Amount (₹)' : 'Optional Advance (₹)'}
+                          </label>
+                          <div className="relative">
+                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-bold">₹</span>
+                            <input 
+                              type="number" 
+                              value={paymentDetails.amountPaid} 
+                              onChange={e => {
+                                const inputVal = e.target.value;
+                                const val = inputVal === '' ? '' : Math.max(0, Number(inputVal));
+                                const numVal = Number(val);
+                                setPaymentDetails({
+                                  ...paymentDetails, 
+                                  amountPaid: val,
+                                  status: numVal >= payableAmount ? 'paid' : numVal > 0 ? 'partial' : 'pending'
+                                });
+                              }} 
+                              className="w-full bg-[#0a0b0e] border border-emerald-500/30 rounded-xl py-3 pl-8 pr-4 text-emerald-400 font-extrabold text-lg outline-none focus:border-emerald-400 transition shadow-inner" 
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      <div className={paymentDetails.paymentMode === 'Bill To Company' ? "md:col-span-1" : ""}>
+                        <label className="block text-[10px] uppercase font-bold text-slate-400 mb-2 tracking-wider">Payment Reference</label>
+                        <input 
+                          type="text" 
+                          value={paymentDetails.paymentReference} 
+                          onChange={e => setPaymentDetails({...paymentDetails, paymentReference: e.target.value})} 
+                          className="w-full bg-[#0a0b0e] border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 text-sm font-semibold transition" 
+                          placeholder="Txn ID, Cheque No, etc." 
+                        />
+                      </div>
+                      
+                      <div className="md:col-span-2">
+                        <label className="block text-[10px] uppercase font-bold text-slate-400 mb-2 tracking-wider">Internal Note</label>
+                        <textarea 
+                          value={paymentDetails.internalNotes} 
+                          onChange={e => setPaymentDetails({...paymentDetails, internalNotes: e.target.value})} 
+                          className="w-full bg-[#0a0b0e] border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 text-sm font-semibold h-20 resize-none transition" 
+                          placeholder="Add billing instructions or payment notes here..."
+                        ></textarea>
+                      </div>
+
+                    </div>
+                  </div>
+
+                  {/* Right side summary recap */}
+                  <div className="space-y-6">
+                    <div className="bg-[#111317] border border-white/5 rounded-2xl overflow-hidden shadow-lg flex flex-col h-full">
+                      <div className="p-5 border-b border-white/5">
+                        <h4 className="text-white font-bold text-xs uppercase tracking-wider text-slate-300">Complete Billing Recap</h4>
+                      </div>
+                      <div className="p-5 flex-1 space-y-3.5 text-xs font-semibold">
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-400">Guest Name</span>
+                          <span className="text-white font-bold">{guestDetails.guestName}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-400">Mobile Contact</span>
+                          <span className="text-white font-bold">{guestDetails.guestContact}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-400">Check In</span>
+                          <span className="text-white font-bold text-emerald-400">{dates.checkIn ? new Date(dates.checkIn).toLocaleDateString('en-GB') : ''}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-400">Check Out</span>
+                          <span className="text-white font-bold text-rose-400">{dates.checkOut ? new Date(dates.checkOut).toLocaleDateString('en-GB') : ''}</span>
+                        </div>
+                        <div className="flex justify-between items-center border-t border-white/5 pt-3 mt-1">
+                          <span className="text-slate-400">Rooms Booked</span>
+                          <span className="text-white font-extrabold bg-white/10 px-2 py-0.5 rounded">{selectedRooms.length}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-400">Net Cost</span>
+                          <span className="text-white">₹{totalNetCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-400">Total GST</span>
+                          <span className="text-slate-300">₹{totalGST.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                        <div className="flex justify-between items-center border-b border-white/5 pb-3">
+                          <span className="text-slate-400">Discount</span>
+                          <span className="text-rose-400 font-bold">- ₹{totalDiscount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                        <div className="flex justify-between items-end pt-2">
+                          <span className="text-slate-300 font-black text-sm uppercase">Total Payable</span>
+                          <span className="text-xl font-black text-emerald-400 tracking-wide">₹{payableAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                      </div>
+                      
+                      {/* Dynamic Balance Banner */}
+                      <div className={`p-4 mt-auto border-t border-white/5 shadow-inner ${
+                        paymentDetails.paymentMode === 'Bill To Company' 
+                          ? 'bg-blue-900/20' 
+                          : Math.max(0, payableAmount - paymentDetails.amountPaid) > 0 
+                            ? 'bg-amber-900/20' 
+                            : 'bg-emerald-900/20'
+                      }`}>
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">
+                              {paymentDetails.paymentMode === 'Bill To Company' ? 'Ledger Balance' : 'Balance Pending'}
+                            </span>
+                            <span className="text-[9px] text-slate-500 font-medium">
+                              {paymentDetails.paymentMode === 'Bill To Company' 
+                                ? `Billed to ${guestDetails.companyName || 'Company'}` 
+                                : `After ₹${paymentDetails.amountPaid || 0} payment`}
+                            </span>
+                          </div>
+                          <span className={`text-lg font-black ${
+                             paymentDetails.paymentMode === 'Bill To Company' ? 'text-blue-400'
+                             : Math.max(0, payableAmount - paymentDetails.amountPaid) > 0 ? 'text-amber-400' : 'text-emerald-400'
+                          }`}>
+                            ₹{Math.max(0, payableAmount - paymentDetails.amountPaid).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      </div>
+
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 4: CONFIRMATION SUCCESS */}
+              {currentStep === 4 && (
+                <div className="flex flex-col items-center justify-center p-8 text-center space-y-6 animate-in fade-in zoom-in-95 duration-500 max-w-2xl mx-auto text-slate-300">
+                  <div className="w-20 h-20 bg-emerald-500/10 border border-emerald-500/30 rounded-full flex items-center justify-center shadow-lg shadow-emerald-500/15 animate-bounce">
+                    <span className="text-emerald-400 text-4xl font-bold">✓</span>
+                  </div>
+                  
+                  <div>
+                    <h3 className="text-2xl font-black text-white tracking-tight">
+                      Booking Updated Successfully!
+                    </h3>
+                    <p className="text-slate-400 text-sm mt-2 max-w-md leading-relaxed">
+                      The reservation changes have been fully synchronized with the database.
+                    </p>
+                  </div>
+
+                  <div className="w-full bg-[#111317] border border-white/5 rounded-2xl p-6 text-left space-y-4 shadow-xl">
+                    <h4 className="text-white font-black text-xs uppercase tracking-wider border-b border-white/5 pb-2.5 text-slate-300">Reservation Summary Card</h4>
+                    
+                    <div className="grid grid-cols-2 gap-4 text-xs font-semibold text-slate-300">
+                      <div>
+                        <span className="text-slate-500 uppercase text-[9px] font-bold block mb-0.5">Primary Guest</span>
+                        <span className="text-white font-extrabold text-sm">{guestDetails.guestName}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 uppercase text-[9px] font-bold block mb-0.5">Phone Contact</span>
+                        <span className="text-white font-extrabold text-sm">{guestDetails.guestContact}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 uppercase text-[9px] font-bold block mb-0.5">Check In / Out</span>
+                        <span className="text-white font-bold">{dates.checkIn ? new Date(dates.checkIn).toLocaleDateString('en-GB') : ''} to {dates.checkOut ? new Date(dates.checkOut).toLocaleDateString('en-GB') : ''}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 uppercase text-[9px] font-bold block mb-0.5">Rooms Allocated</span>
+                        <span className="text-white font-extrabold">{selectedRooms.length} Rooms ({selectedRooms.map(r => `Room ${r.roomNumber}`).join(', ')})</span>
+                      </div>
+                      <div className="col-span-2 border-t border-white/5 pt-3 flex justify-between items-center">
+                        <div>
+                          <span className="text-slate-500 uppercase text-[9px] font-bold block mb-0.5">Payment Method</span>
+                          <span className="text-white font-extrabold text-sm uppercase bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded inline-block">{paymentDetails.paymentMethod}</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-slate-500 uppercase text-[9px] font-bold block mb-0.5">Total Payable Amount</span>
+                          <span className="text-lg font-black text-emerald-400">₹{payableAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-4 w-full justify-center pt-2">
+                    <button 
+                      onClick={handleDownloadPDF}
+                      className="px-8 py-3.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-black text-sm tracking-wider transition-all duration-300 shadow-lg shadow-blue-500/20 active:scale-95 flex items-center justify-center gap-2 border-0 cursor-pointer"
+                    >
+                      <Download size={18} /> Download Voucher PDF
+                    </button>
+                    <button 
+                      onClick={handlePrintVoucher}
+                      className="px-8 py-3.5 bg-[#1a1d24] hover:bg-[#252a34] text-white border border-white/10 rounded-xl font-bold text-sm tracking-wider transition-all duration-300 shadow-lg active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <Printer size={18} /> Print Voucher
+                    </button>
+                  </div>
+
+                  <button 
+                    onClick={() => {
+                      handleWizardClose();
+                      fetchDetails();
+                      if (onRefresh) onRefresh();
+                    }}
+                    className="w-full sm:w-auto px-10 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-black text-sm uppercase tracking-wider transition-all duration-300 shadow-[0_0_20px_rgba(16,185,129,0.3)] active:scale-95 border border-emerald-400/20 mt-2 cursor-pointer"
+                  >
+                    Done & Close
+                  </button>
+
+                </div>
+              )}
+
+            </div>
+
+            {/* Stepper Navigation Sticky Footer Bar */}
+            {currentStep < 4 && (
+              <div className="p-4 md:p-6 bg-[#13151a] border-t border-white/5 flex flex-col sm:flex-row justify-between items-center gap-4 sticky bottom-0 z-30 shadow-[0_-8px_25px_rgba(0,0,0,0.5)] rounded-b-3xl">
+                <div>
+                  {currentStep > 1 && (
+                    <button
+                      type="button"
+                      disabled={isSavingStep}
+                      onClick={() => setCurrentStep(prev => prev - 1)}
+                      className="px-6 py-3 bg-[#0a0b0e] border border-white/10 text-slate-400 hover:text-white rounded-xl text-xs uppercase tracking-wider font-extrabold hover:border-white/20 transition-all duration-200 active:scale-95 disabled:opacity-50 flex items-center gap-2 cursor-pointer"
+                    >
+                      ← Back
+                    </button>
+                  )}
+                </div>
+                
+                <div className="w-full sm:w-auto">
+                  {currentStep < 3 ? (
+                    <button
+                      type="button"
+                      disabled={isSavingStep}
+                      onClick={async () => {
+                        if (currentStep === 1) {
+                          if (selectedRooms.length === 0) {
+                            return toast.error('Please select at least one room');
+                          }
+                          const invalidRoom = selectedRooms.find(r => r.baseCost <= 0 || r.total <= 0);
+                          if (invalidRoom) {
+                            return toast.error(`Pricing values are missing or invalid for Room ${invalidRoom.roomNumber}`);
+                          }
+                          if (payableAmount <= 0) {
+                            return toast.error('Payable amount must be greater than 0');
+                          }
+                          
+                          setIsSavingStep(true);
+                          const loadingToast = toast.loading('Saving billing configuration...');
+                          setTimeout(() => {
+                            toast.dismiss(loadingToast);
+                            setIsSavingStep(false);
+                            toast.success('Billing data saved successfully!');
+                            setCurrentStep(2);
+                          }, 750);
+                        } else if (currentStep === 2) {
+                          if (!guestDetails.guestName.trim()) {
+                            return toast.error('Guest Full Name is required');
+                          }
+                          if (!guestDetails.guestContact.trim()) {
+                            return toast.error('Guest Contact Number is required');
+                          }
+                          
+                          setIsSavingStep(true);
+                          const loadingToast = toast.loading('Updating guest profile details...');
+                          setTimeout(() => {
+                            toast.dismiss(loadingToast);
+                            setIsSavingStep(false);
+                            toast.success('Guest details updated successfully!');
+                            setCurrentStep(3);
+                          }, 750);
+                        }
+                      }}
+                      className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-500 hover:to-emerald-500 text-white rounded-xl text-xs uppercase tracking-wider font-extrabold transition-all duration-300 shadow-[0_0_20px_rgba(59,130,246,0.3)] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer border-0"
+                    >
+                      {isSavingStep ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          Processing...
+                        </>
+                      ) : (
+                        <>
+                          Continue to {currentStep === 1 ? 'Guest Details' : 'Payment'} →
+                        </>
+                      )}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={isSavingStep}
+                      onClick={handleUpdateSubmit}
+                      className="w-full sm:w-auto px-10 py-3.5 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white rounded-xl text-xs uppercase tracking-wider font-extrabold transition-all duration-300 shadow-[0_0_25px_rgba(16,185,129,0.4)] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer border-0"
+                    >
+                      {isSavingStep ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          Updating Booking...
+                        </>
+                      ) : (
+                        <>
+                          ✓ Update Booking (₹{payableAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })})
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </>
   );

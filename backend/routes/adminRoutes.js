@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { updateHotelProfile, createRoomType, createRooms, deleteRoom, createStaff, getHotelProfile, getStaffList, getRoomTypes, getRooms, updateRoomStatus, getRatePlans, createRatePlan, deleteRatePlan, getBookings, createBooking, updateBookingStatus, updateBooking, deleteBooking, getRoomBlocks, createRoomBlock, deleteRoomBlock, getRoomRack, searchRackBookings, getBookingDetails, addExtraService, deleteExtraService, addPaymentFolio, deletePaymentFolio, processCheckout } = require('../controllers/adminController');
+const { updateHotelProfile, createRoomType, createRooms, deleteRoom, createStaff, getHotelProfile, getStaffList, getRoomTypes, getRooms, updateRoomStatus, getRatePlans, createRatePlan, deleteRatePlan, getBookings, createBooking, updateBookingStatus, updateBooking, deleteBooking, getRoomBlocks, createRoomBlock, deleteRoomBlock, getRoomRack, searchRackBookings, getBookingDetails, addExtraService, deleteExtraService, addPaymentFolio, deletePaymentFolio, processCheckout, updateBookingGroup } = require('../controllers/adminController');
 const { protect, authorize } = require('../middleware/authMiddleware');
 
 router.get('/hotel', protect, authorize('admin'), getHotelProfile);
@@ -24,6 +24,7 @@ router.get('/bookings/:id/details', protect, authorize('admin'), getBookingDetai
 router.put('/bookings/:id/status', protect, authorize('admin'), updateBookingStatus);
 router.put('/bookings/:id/checkout', protect, authorize('admin'), processCheckout);
 router.patch('/bookings/:id', protect, authorize('admin'), updateBooking);
+router.put('/bookings/group/:groupId', protect, authorize('admin'), updateBookingGroup);
 router.delete('/bookings/:id', protect, authorize('admin'), deleteBooking);
 
 router.post('/bookings/:id/services', protect, authorize('admin'), addExtraService);

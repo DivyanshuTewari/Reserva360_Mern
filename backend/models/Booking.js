@@ -38,6 +38,7 @@ const bookingSchema = new mongoose.Schema({
   guestEmail: { type: String },
   guestAddress: { type: String },
   guestDob: { type: Date },
+  gender: { type: String },
   guestCountry: { type: String, default: 'India' },
   guestState: { type: String },
   guestCity: { type: String },

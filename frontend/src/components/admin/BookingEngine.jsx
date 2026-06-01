@@ -35,6 +35,8 @@ const BookingEngine = () => {
 
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingBooking, setEditingBooking] = useState(null);
+  const [isEditingFlow, setIsEditingFlow] = useState(false);
+  const [editingGroupId, setEditingGroupId] = useState(null);
   const syncTimeoutRef = useRef(null);
 
   const debounceSyncBooking = (bookingData) => {
@@ -236,7 +238,8 @@ const BookingEngine = () => {
     companyGst: '',
     companyAddress: '',
     arrivalTime: '12:00',
-    specialNote: ''
+    specialNote: '',
+    gender: ''
   });
 
   const [paymentDetails, setPaymentDetails] = useState({
@@ -326,6 +329,9 @@ const BookingEngine = () => {
     const checkOut = new Date(dates.checkOut); checkOut.setHours(0,0,0,0);
     return bookings.some(b => {
       if (b.status === 'cancelled' || b.status === 'checked-out') return false;
+      if (isEditingFlow && (b.bookingGroupId === editingGroupId || b._id === editingGroupId)) {
+        return false;
+      }
       const bRoomId = b.roomId?._id || b.roomId;
       if (bRoomId !== roomId) return false;
       const bCheckIn = new Date(b.checkInDate); bCheckIn.setHours(0,0,0,0);
@@ -589,6 +595,162 @@ const BookingEngine = () => {
     }
   };
 
+  const handleEditClick = async (booking) => {
+    const toastId = toast.loading('Fetching complete booking details...');
+    try {
+      const res = await api.get(`/admin/bookings/${booking._id}/details`);
+      const data = res.data;
+      const b = data.booking;
+
+      // Populate dates
+      setDates({
+        checkIn: new Date(b.checkInDate).toISOString().split('T')[0],
+        checkOut: new Date(b.checkOutDate).toISOString().split('T')[0]
+      });
+
+      // Populate guestDetails
+      setGuestDetails({
+        bookingSource: b.bookingSource || 'Direct',
+        sourceType: b.comingFrom || '',
+        guestName: b.guestName || '',
+        guestContact: b.guestContact || '',
+        guestDob: b.guestDob ? new Date(b.guestDob).toISOString().split('T')[0] : '',
+        guestCountry: b.guestCountry || 'India',
+        guestState: b.guestState || '',
+        guestCity: b.guestCity || '',
+        email: b.guestEmail || '',
+        address: b.guestAddress || '',
+        idType: b.idProofType || 'Aadhaar Card',
+        idNumber: b.idProofNumber || '',
+        nationality: b.nationality || 'Indian',
+        companyName: b.companyName || '',
+        companyGst: b.companyGst || '',
+        companyAddress: b.companyAddress || '',
+        arrivalTime: b.arrivalTime || '12:00',
+        specialNote: b.specialRequests || '',
+        gender: b.gender || ''
+      });
+
+      // Populate paymentDetails
+      setPaymentDetails({
+        paymentMode: b.paymentMode || 'Prepaid',
+        paymentMethod: b.paymentMethod || 'Cash',
+        amountPaid: b.paidAmount || 0,
+        paymentReference: b.paymentReference || '',
+        internalNotes: b.internalNotes || '',
+        status: b.paymentStatus || 'pending'
+      });
+
+      // Populate gstMode
+      setGstMode(b.gstMode || 'exclusive');
+
+      // Populate selectedRooms
+      const mappedRooms = data.groupBookings.map(gb => {
+        // Find matching rate plan by meal plan name
+        const plan = ratePlans.find(p => p.planName === gb.mealPlan);
+        return {
+          bookingId: gb._id, // store the existing booking ID to differentiate existing vs new rooms!
+          roomId: gb.roomId?._id || gb.roomId,
+          roomNumber: gb.roomId?.roomNumber || 'TBD',
+          categoryId: gb.roomId?.roomTypeId?._id || gb.roomId?.roomTypeId || gb.roomTypeId,
+          categoryName: gb.roomId?.roomTypeId?.name || gb.categoryName || 'Standard Room',
+          adults: gb.adults || 2,
+          children: gb.children || 0,
+          infant: gb.infant || 0,
+          ratePlanId: plan?._id || 'room_only',
+          baseCost: gb.cost || 0,
+          gst: gb.gst || 0,
+          total: gb.totalAmount || 0
+        };
+      });
+      setSelectedRooms(mappedRooms);
+
+      // Reconstruct discount
+      const totalDisc = data.groupBookings.reduce((sum, gb) => sum + (gb.discount || 0), 0);
+      setTotalDiscount(totalDisc);
+      setDiscountInput(totalDisc > 0 ? String(totalDisc) : '');
+      setDiscountTypeInput('flat');
+
+      // Set editing flags
+      setIsEditingFlow(true);
+      setEditingGroupId(b.bookingGroupId || b._id);
+      
+      toast.success('Booking preloaded successfully!', { id: toastId });
+      setShowModal(true); // Open the wizard modal!
+      setCurrentStep(1); // Start at Step 1!
+    } catch (error) {
+      toast.error('Failed to load booking details: ' + (error.response?.data?.message || error.message), { id: toastId });
+      console.error(error);
+    }
+  };
+
+  const handleUpdateSubmit = async () => {
+    if (selectedRooms.length === 0) return toast.error('Please select at least one room');
+    if (!guestDetails.guestName || !guestDetails.guestContact) return toast.error('Please provide guest details');
+
+    setIsSavingStep(true);
+    const loadingToast = toast.loading('Updating booking reservation details...');
+    try {
+      const payload = {
+        checkInDate: dates.checkIn,
+        checkOutDate: dates.checkOut,
+        guestDetails: {
+          guestName: guestDetails.guestName,
+          guestContact: guestDetails.guestContact,
+          email: guestDetails.email,
+          address: guestDetails.address,
+          guestDob: guestDetails.guestDob,
+          guestCountry: guestDetails.guestCountry,
+          guestState: guestDetails.guestState,
+          guestCity: guestDetails.guestCity,
+          companyName: guestDetails.companyName,
+          companyGst: guestDetails.companyGst,
+          companyAddress: guestDetails.companyAddress,
+          idType: guestDetails.idType,
+          idNumber: guestDetails.idNumber,
+          nationality: guestDetails.nationality,
+          arrivalTime: guestDetails.arrivalTime,
+          specialNote: guestDetails.specialNote,
+          gender: guestDetails.gender || ''
+        },
+        paymentDetails: {
+          paymentMode: paymentDetails.paymentMode,
+          paymentMethod: paymentDetails.paymentMethod,
+          amountPaid: Number(paymentDetails.amountPaid || 0),
+          paymentReference: paymentDetails.paymentReference || '',
+          internalNotes: paymentDetails.internalNotes || '',
+          status: paymentDetails.status || 'pending'
+        },
+        selectedRooms: selectedRooms.map(room => ({
+          bookingId: room.bookingId, // existing booking ID if present
+          roomId: room.roomId,
+          adults: room.adults || 2,
+          children: room.children || 0,
+          infant: room.infant || 0,
+          mealPlan: ratePlans.find(p => p._id === room.ratePlanId)?.planName || 'Room Only',
+          cost: roundToTwo(room.baseCost),
+          gst: roundToTwo(room.gst),
+          totalAmount: roundToTwo(room.total)
+        })),
+        gstMode: gstMode,
+        totalDiscount: totalDiscount,
+        payableAmount: payableAmount
+      };
+
+      await api.put(`/admin/bookings/group/${editingGroupId}`, payload);
+      
+      toast.success('Reservation(s) updated successfully', { id: loadingToast });
+      setCurrentBookingId(editingGroupId);
+      setCurrentStep(4);
+      fetchData();
+    } catch (error) {
+      toast.error('Failed to update booking: ' + (error.response?.data?.message || error.message), { id: loadingToast });
+      console.error(error);
+    } finally {
+      setIsSavingStep(false);
+    }
+  };
+
   const [downloadVoucherData, setDownloadVoucherData] = useState(null);
   const listVoucherRef = useRef(null);
   
@@ -665,6 +827,8 @@ const BookingEngine = () => {
 
   const handleWizardClose = () => {
     setShowModal(false);
+    setIsEditingFlow(false);
+    setEditingGroupId(null);
     setCurrentStep(1);
     setSelectedRooms([]);
     setGuestDetails({
@@ -685,7 +849,8 @@ const BookingEngine = () => {
       companyGst: '',
       companyAddress: '',
       arrivalTime: '12:00',
-      specialNote: ''
+      specialNote: '',
+      gender: ''
     });
     setPaymentDetails({ paymentMode: 'Prepaid', paymentMethod: 'Cash', amountPaid: 0, paymentReference: '', internalNotes: '', status: 'pending' });
     setDiscountInput('');
@@ -832,10 +997,7 @@ const BookingEngine = () => {
                         </td>
                         <td className="px-6 py-3 text-right">
                           <button
-                            onClick={() => {
-                              setEditingBooking(room);
-                              setShowEditModal(true);
-                            }}
+                            onClick={() => handleEditClick(room)}
                             className="bg-blue-600/10 hover:bg-blue-600/30 text-[#3b82f6] hover:text-white px-2.5 py-1 rounded-lg text-xs font-bold transition-all border border-blue-500/20 active:scale-95"
                           >
                             Edit
@@ -861,7 +1023,7 @@ const BookingEngine = () => {
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center p-5 md:p-6 border-b border-white/5 bg-[#13151a] rounded-t-3xl gap-4">
               <div className="flex justify-between items-center w-full md:w-auto">
                 <h3 className="text-lg md:text-xl font-bold text-white flex items-center">
-                  <CalendarDays className="mr-3 text-blue-500 shrink-0" /> Create Reservation
+                  <CalendarDays className="mr-3 text-blue-500 shrink-0" /> {isEditingFlow ? 'Edit Reservation' : 'Create Reservation'}
                 </h3>
                 <button onClick={handleWizardClose} className="md:hidden p-2 text-slate-400 hover:text-white transition-colors bg-white/5 rounded-full">
                   <X size={18} />
@@ -872,7 +1034,7 @@ const BookingEngine = () => {
                   <DatePicker 
                     label="Check In" 
                     selected={dates.checkIn} 
-                    minDate={new Date().toISOString().split('T')[0]}
+                    minDate={isEditingFlow ? undefined : new Date().toISOString().split('T')[0]}
                     onChange={(dateStr) => {
                       const nextDay = new Date(new Date(dateStr).getTime() + 86400000).toISOString().split('T')[0];
                       setDates(prev => {
@@ -890,7 +1052,7 @@ const BookingEngine = () => {
                   <DatePicker 
                     label="Check Out" 
                     selected={dates.checkOut} 
-                    minDate={new Date(new Date(dates.checkIn).getTime() + 86400000).toISOString().split('T')[0]}
+                    minDate={isEditingFlow ? undefined : new Date(new Date(dates.checkIn).getTime() + 86400000).toISOString().split('T')[0]}
                     onChange={(dateStr) => {
                       setDates(prev => ({ ...prev, checkOut: dateStr }));
                     }}
@@ -1321,7 +1483,7 @@ const BookingEngine = () => {
                     <h4 className="text-white font-bold text-base border-b border-white/5 pb-3 uppercase tracking-wider text-xs text-slate-300">Guest Information Profile</h4>
                     
                     {/* Row 1: Basic Info */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                       <div>
                         <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1.5 tracking-wider">Guest Full Name <span className="text-rose-500">*</span></label>
                         <input 
@@ -1341,6 +1503,19 @@ const BookingEngine = () => {
                           className="w-full bg-[#0a0b0e] border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 text-sm font-semibold placeholder-slate-600 transition" 
                           placeholder="e.g. +91 98765 43210" 
                         />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1.5 tracking-wider">Gender</label>
+                        <select 
+                          value={guestDetails.gender} 
+                          onChange={e => setGuestDetails({...guestDetails, gender: e.target.value})} 
+                          className="w-full bg-[#0a0b0e] border border-white/10 rounded-xl p-3 text-white outline-none focus:border-blue-500 text-sm font-semibold transition cursor-pointer"
+                        >
+                          <option value="">Select Gender</option>
+                          <option value="Male">Male</option>
+                          <option value="Female">Female</option>
+                          <option value="Other">Other</option>
+                        </select>
                       </div>
                       <div>
                         <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1.5 tracking-wider">Date of Birth</label>
@@ -1748,9 +1923,13 @@ const BookingEngine = () => {
                   </div>
                   
                   <div>
-                    <h3 className="text-2xl font-black text-white tracking-tight">Booking Completed Successfully!</h3>
+                    <h3 className="text-2xl font-black text-white tracking-tight">
+                      {isEditingFlow ? 'Booking Updated Successfully!' : 'Booking Completed Successfully!'}
+                    </h3>
                     <p className="text-slate-400 text-sm mt-2 max-w-md leading-relaxed">
-                      The reservation has been registered into the PMS and synced with the cloud database.
+                      {isEditingFlow 
+                        ? 'The reservation changes have been fully synchronized with the cloud database.' 
+                        : 'The reservation has been registered into the PMS and synced with the cloud database.'}
                     </p>
                   </div>
 
@@ -1806,7 +1985,7 @@ const BookingEngine = () => {
                     onClick={handleWizardClose}
                     className="w-full sm:w-auto px-10 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-black text-sm uppercase tracking-wider transition-all duration-300 shadow-[0_0_20px_rgba(16,185,129,0.3)] active:scale-95 border border-emerald-400/20 mt-2"
                   >
-                    Start New Booking
+                    {isEditingFlow ? 'Done & Close' : 'Start New Booking'}
                   </button>
 
                 </div>
@@ -1892,17 +2071,17 @@ const BookingEngine = () => {
                     <button
                       type="button"
                       disabled={isSavingStep}
-                      onClick={handleSubmit}
+                      onClick={isEditingFlow ? handleUpdateSubmit : handleSubmit}
                       className="w-full sm:w-auto px-10 py-3.5 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white rounded-xl text-xs uppercase tracking-wider font-extrabold transition-all duration-300 shadow-[0_0_25px_rgba(16,185,129,0.4)] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
                       {isSavingStep ? (
                         <>
                           <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                          Creating Reservation...
+                          {isEditingFlow ? 'Updating Booking...' : 'Creating Reservation...'}
                         </>
                       ) : (
                         <>
-                          ✓ Confirm Booking (₹{payableAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })})
+                          ✓ {isEditingFlow ? `Update Booking (₹${payableAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })})` : `Confirm Booking (₹${payableAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })})`}
                         </>
                       )}
                     </button>

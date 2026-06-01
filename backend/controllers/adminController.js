@@ -866,3 +866,280 @@ exports.getBookingDetails = async (req, res) => {
     });
   } catch (error) { res.status(500).json({ message: error.message }); }
 };
+
+// @desc    Update Complete Booking Group
+// @route   PUT /api/admin/bookings/group/:groupId
+// @access  Private/Admin
+exports.updateBookingGroup = async (req, res) => {
+  const { groupId } = req.params;
+  const hotelId = req.user.hotelId;
+  const {
+    checkInDate,
+    checkOutDate,
+    guestDetails,
+    paymentDetails,
+    selectedRooms,
+    gstMode,
+    totalDiscount,
+    payableAmount
+  } = req.body;
+
+  try {
+    // 1. Validate room availability first to prevent conflicts before starting database work
+    const checkIn = new Date(checkInDate);
+    const checkOut = new Date(checkOutDate);
+
+    for (const roomConf of selectedRooms) {
+      const { roomId, bookingId } = roomConf;
+      
+      // Look up physical room details for display name in validation message
+      const room = await Room.findById(roomId);
+      if (!room) {
+        return res.status(404).json({ message: `Physical room not found.` });
+      }
+
+      // Check overlap booking conflict
+      const conflictBooking = await Booking.findOne({
+        hotelId: hotelId,
+        _id: { $ne: bookingId }, // ignore this specific booking record if updating
+        bookingGroupId: { $ne: groupId }, // ignore all other booking records in the same group being edited
+        roomId: roomId,
+        status: { $in: ['confirmed', 'checked-in'] },
+        checkInDate: { $lt: checkOut },
+        checkOutDate: { $gt: checkIn }
+      });
+
+      if (conflictBooking) {
+        return res.status(400).json({
+          message: `Room ${room.roomNumber} is already booked by ${conflictBooking.guestName} for the selected dates.`
+        });
+      }
+
+      // Check overlap room block conflict
+      const conflictBlock = await RoomBlock.findOne({
+        hotelId: hotelId,
+        roomId: roomId,
+        startDate: { $lt: checkOut },
+        endDate: { $gt: checkIn }
+      });
+
+      if (conflictBlock) {
+        return res.status(400).json({
+          message: `Room ${room.roomNumber} is blocked due to ${conflictBlock.reason} for the selected dates.`
+        });
+      }
+    }
+
+    // 2. Start a Mongoose Session & Transaction (with standalone grace fallback)
+    const mongoose = require('mongoose');
+    let session = null;
+    try {
+      session = await mongoose.startSession();
+      session.startTransaction();
+    } catch (e) {
+      console.warn("MongoDB replica set not detected. Running without multi-document transaction session.");
+      session = null;
+    }
+
+    try {
+      // 3. Find old booking records in this group to identify deleted rooms
+      const isValidObjectId = mongoose.Types.ObjectId.isValid(groupId);
+      const oldBookings = await Booking.find({
+        hotelId: hotelId,
+        $or: [
+          { bookingGroupId: groupId },
+          ...(isValidObjectId ? [{ _id: groupId }] : [])
+        ]
+      });
+      const oldBookingIds = oldBookings.map(b => b._id.toString());
+      const selectedBookingIds = selectedRooms.map(r => r.bookingId).filter(Boolean);
+
+      // Find deleted bookings
+      const deletedBookings = oldBookings.filter(b => !selectedBookingIds.includes(b._id.toString()));
+      for (const db of deletedBookings) {
+        // Free up physical room status
+        if (db.roomId) {
+          await Room.findOneAndUpdate(
+            { _id: db.roomId, hotelId },
+            { status: 'available' },
+            { session }
+          );
+        }
+        // Delete the booking record
+        await Booking.findOneAndDelete(
+          { _id: db._id, hotelId },
+          { session }
+        );
+      }
+
+      // 4. Update or Create bookings for each room configuration
+      const updatedBookings = [];
+      const discountPerRoom = roundToTwo(totalDiscount / selectedRooms.length);
+
+      for (let index = 0; index < selectedRooms.length; index++) {
+        const roomConf = selectedRooms[index];
+        const { bookingId, roomId, adults, children, infant, mealPlan, cost, gst, totalAmount } = roomConf;
+
+        const bookingData = {
+          hotelId: hotelId,
+          roomId: roomId,
+          guestName: guestDetails.guestName,
+          guestContact: guestDetails.guestContact,
+          guestEmail: guestDetails.email,
+          guestAddress: guestDetails.address,
+          guestDob: guestDetails.guestDob ? new Date(guestDetails.guestDob) : undefined,
+          guestCountry: guestDetails.guestCountry,
+          guestState: guestDetails.guestState,
+          guestCity: guestDetails.guestCity,
+          companyName: guestDetails.companyName,
+          companyGst: guestDetails.companyGst,
+          companyAddress: guestDetails.companyAddress,
+          idProofType: guestDetails.idType,
+          idProofNumber: guestDetails.idNumber,
+          nationality: guestDetails.nationality,
+          arrivalTime: guestDetails.arrivalTime,
+          specialRequests: guestDetails.specialNote,
+          gender: guestDetails.gender,
+          checkInDate: checkIn,
+          checkOutDate: checkOut,
+          cost: roundToTwo(cost),
+          gst: roundToTwo(gst),
+          discount: discountPerRoom,
+          discountValue: discountPerRoom,
+          totalAmount: roundToTwo(totalAmount),
+          mealPlan: mealPlan,
+          adults: adults,
+          children: children,
+          infant: infant,
+          gstMode: gstMode,
+          bookingGroupId: groupId,
+          paymentMode: paymentDetails.paymentMode,
+          paymentMethod: paymentDetails.paymentMethod,
+          paymentReference: paymentDetails.paymentReference,
+          internalNotes: paymentDetails.internalNotes,
+          status: oldBookings[0]?.status || 'confirmed' // Keep old check-in status (e.g. checked-in)
+        };
+
+        if (bookingId) {
+          // Update existing booking
+          const oldB = oldBookings.find(b => b._id.toString() === bookingId);
+          const oldRoomId = oldB?.roomId?.toString();
+          
+          const updatedB = await Booking.findOneAndUpdate(
+            { _id: bookingId, hotelId },
+            bookingData,
+            { returnDocument: 'after', session }
+          );
+          
+          updatedBookings.push(updatedB);
+
+          // Synchronize room status if physical room assignment changed
+          if (oldRoomId && oldRoomId !== roomId.toString()) {
+            // Revert old room status to available
+            await Room.findOneAndUpdate(
+              { _id: oldRoomId, hotelId },
+              { status: 'available' },
+              { session }
+            );
+            // Set new room status based on check-in state
+            const targetRoomStatus = updatedB.status === 'checked-in' ? 'occupied' : 'available';
+            await Room.findOneAndUpdate(
+              { _id: roomId, hotelId },
+              { status: targetRoomStatus },
+              { session }
+            );
+          } else {
+            // If room didn't change, ensure room matches check-in status
+            const targetRoomStatus = updatedB.status === 'checked-in' ? 'occupied' : 'available';
+            await Room.findOneAndUpdate(
+              { _id: roomId, hotelId },
+              { status: targetRoomStatus },
+              { session }
+            );
+          }
+        } else {
+          // Create a new booking row added during editing
+          const newB = await Booking.create([bookingData], { session });
+          const createdB = newB[0];
+          updatedBookings.push(createdB);
+
+          // Mark newly added room status
+          const targetRoomStatus = createdB.status === 'checked-in' ? 'occupied' : 'available';
+          await Room.findOneAndUpdate(
+            { _id: roomId, hotelId },
+            { status: targetRoomStatus },
+            { session }
+          );
+        }
+      }
+
+      // 5. Synchronize associated Payments
+      const firstBookingId = updatedBookings[0]?._id;
+      if (firstBookingId) {
+        const paymentAmount = roundToTwo(Number(paymentDetails.amountPaid || 0));
+        
+        // Find existing payments for this group
+        const bookingIds = updatedBookings.map(b => b._id);
+        const existingPayments = await Payment.find({ bookingId: { $in: bookingIds } }).session(session);
+
+        if (existingPayments.length > 0) {
+          // Update the first payment record
+          await Payment.findOneAndUpdate(
+            { _id: existingPayments[0]._id, hotelId },
+            {
+              bookingId: firstBookingId,
+              amount: paymentAmount,
+              paymentType: paymentDetails.paymentMethod || 'Cash',
+              referenceText: paymentDetails.paymentReference || 'Updated Payment Details'
+            },
+            { session }
+          );
+        } else if (paymentAmount > 0) {
+          // Create new Payment document if none existed
+          await Payment.create([{
+            bookingId: firstBookingId,
+            hotelId: hotelId,
+            paymentType: paymentDetails.paymentMethod || 'Cash',
+            additionType: 'Default',
+            amount: paymentAmount,
+            paymentDate: new Date(),
+            referenceText: paymentDetails.paymentReference || 'Initial Payment (From Edit)'
+          }], { session });
+        }
+      }
+
+      // Commit the transaction
+      if (session) {
+        await session.commitTransaction();
+      }
+
+      // 6. Recalculate PMS financials across the updated group
+      await recalculateGroupBookingTotals(groupId, hotelId);
+
+      // Fetch the updated populated records to return
+      const finalBookings = await Booking.find({
+        hotelId,
+        $or: [
+          { bookingGroupId: groupId },
+          ...(isValidObjectId ? [{ _id: groupId }] : [])
+        ]
+      }).populate('roomId', 'roomNumber roomTypeId');
+      res.json(finalBookings);
+
+    } catch (innerError) {
+      if (session) {
+        await session.abortTransaction();
+      }
+      throw innerError;
+    } finally {
+      if (session) {
+        session.endSession();
+      }
+    }
+
+  } catch (error) {
+    console.error("Booking group update error:", error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
