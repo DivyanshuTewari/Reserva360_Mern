@@ -1209,7 +1209,11 @@ const BookingDetailsDrawer = ({ bookingId, onClose, onRefresh }) => {
                                     >
                                       <option value="">Change Room No</option>
                                       {availableRooms.map(r => (
-                                        <option key={r._id} value={r._id}>
+                                        <option 
+                                          key={r._id} 
+                                          value={r._id}
+                                          disabled={(r.status === 'cleaning' || r.status === 'maintenance' || r.status === 'occupied') && r._id !== gb.roomId?._id}
+                                        >
                                           {r.roomNumber} ({r.status})
                                         </option>
                                       ))}
