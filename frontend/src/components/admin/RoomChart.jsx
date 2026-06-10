@@ -30,38 +30,12 @@ const RoomChart = () => {
   // Drawer State
   const [drawerBookingId, setDrawerBookingId] = useState(null);
 
-  const [startDate, setStartDate] = useState(() => {
-    const saved = localStorage.getItem('reserva_roomchart_startdate');
-    if (saved && saved !== 'undefined' && saved !== 'null') {
-      const parsed = new Date(saved);
-      if (!isNaN(parsed.getTime())) {
-        return parsed;
-      }
-    }
-    return getStartOfCurrentWeek();
-  });
+  const [startDate, setStartDate] = useState(() => getStartOfCurrentWeek());
   const [endDate, setEndDate] = useState(() => {
-    const savedStart = localStorage.getItem('reserva_roomchart_startdate');
-    let date;
-    if (savedStart && savedStart !== 'undefined' && savedStart !== 'null') {
-      const parsed = new Date(savedStart);
-      if (!isNaN(parsed.getTime())) {
-        date = new Date(parsed);
-      } else {
-        date = getStartOfCurrentWeek();
-      }
-    } else {
-      date = getStartOfCurrentWeek();
-    }
+    const date = getStartOfCurrentWeek();
     date.setDate(date.getDate() + 6); 
     return date;
   });
-
-  useEffect(() => {
-    if (startDate && !isNaN(startDate.getTime())) {
-      localStorage.setItem('reserva_roomchart_startdate', startDate.toISOString());
-    }
-  }, [startDate]);
 
   const fetchRackData = useCallback(async () => {
     try {
