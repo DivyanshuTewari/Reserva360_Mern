@@ -5,8 +5,12 @@ import { Save, Building2, MapPin, Phone, FileText, Clock, DollarSign, Image as I
 import RoomCategories from './RoomCategories';
 import RoomMatrix from './RoomMatrix';
 
-const PropertySettings = () => {
-  const [activeTab, setActiveTab] = useState('general');
+const PropertySettings = ({ initialSubTab = 'general' }) => {
+  const [activeTab, setActiveTab] = useState(initialSubTab);
+
+  useEffect(() => {
+    setActiveTab(initialSubTab);
+  }, [initialSubTab]);
 
   const [formData, setFormData] = useState({
     name: '',

@@ -3,7 +3,7 @@ import { AuthContext } from '../../context/AuthContext';
 import { BedDouble, CalendarDays, Receipt, Users, MapPin } from 'lucide-react';
 import api from '../../utils/api';
 
-const AdminOverview = () => {
+const AdminOverview = ({ onNavigate }) => {
   const { user } = useContext(AuthContext);
   const [hotelProfile, setHotelProfile] = useState(null);
 
@@ -87,14 +87,26 @@ const AdminOverview = () => {
         <div className="bg-[#13151a]/80 backdrop-blur-xl border border-white/5 rounded-2xl p-6 shadow-xl">
           <h3 className="text-xl font-bold text-white mb-6">Quick Actions</h3>
           <div className="space-y-3">
-            <button className="w-full text-left px-4 py-3 bg-white/5 hover:bg-white/10 rounded-xl transition-colors text-slate-300 font-medium">
-              Create New Booking
+            <button 
+              onClick={() => onNavigate && onNavigate('booking', { openModal: true })}
+              className="w-full text-left px-4 py-3 bg-white/5 hover:bg-white/10 rounded-xl transition-all duration-300 text-slate-300 hover:text-white font-medium flex items-center justify-between group/btn hover:translate-x-1"
+            >
+              <span>Create New Booking</span>
+              <span className="text-blue-400 opacity-0 group-hover/btn:opacity-100 transition-opacity">→</span>
             </button>
-            <button className="w-full text-left px-4 py-3 bg-white/5 hover:bg-white/10 rounded-xl transition-colors text-slate-300 font-medium">
-              Add Room Type
+            <button 
+              onClick={() => onNavigate && onNavigate('property', { subTab: 'categories' })}
+              className="w-full text-left px-4 py-3 bg-white/5 hover:bg-white/10 rounded-xl transition-all duration-300 text-slate-300 hover:text-white font-medium flex items-center justify-between group/btn hover:translate-x-1"
+            >
+              <span>Add Room Type</span>
+              <span className="text-blue-400 opacity-0 group-hover/btn:opacity-100 transition-opacity">→</span>
             </button>
-            <button className="w-full text-left px-4 py-3 bg-white/5 hover:bg-white/10 rounded-xl transition-colors text-slate-300 font-medium">
-              Invite Staff Member
+            <button 
+              onClick={() => onNavigate && onNavigate('staff', { openModal: true })}
+              className="w-full text-left px-4 py-3 bg-white/5 hover:bg-white/10 rounded-xl transition-all duration-300 text-slate-300 hover:text-white font-medium flex items-center justify-between group/btn hover:translate-x-1"
+            >
+              <span>Invite Staff Member</span>
+              <span className="text-blue-400 opacity-0 group-hover/btn:opacity-100 transition-opacity">→</span>
             </button>
           </div>
         </div>

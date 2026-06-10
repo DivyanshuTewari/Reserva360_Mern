@@ -9,7 +9,7 @@ import BookingVoucher from './BookingVoucher';
 
 const roundToTwo = (num) => Math.round((num + Number.EPSILON) * 100) / 100;
 
-const BookingEngine = () => {
+const BookingEngine = ({ initialOpenModal = false, onCloseModal }) => {
   const [bookings, setBookings] = useState([]);
   const [roomTypes, setRoomTypes] = useState([]);
   const [rooms, setRooms] = useState([]);
@@ -18,7 +18,50 @@ const BookingEngine = () => {
   const [roomBlocks, setRoomBlocks] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   
-  const [showModal, setShowModal] = useState(false);
+  const [showModal, setShowModal] = useState(initialOpenModal);
+
+  useEffect(() => {
+    if (initialOpenModal) {
+      setShowModal(true);
+      setCurrentStep(1);
+      setIsEditingFlow(false);
+      setEditingGroupId(null);
+      setSelectedRooms([]);
+      setTotalDiscount(0);
+      setDiscountInput('');
+      setGuestDetails({
+        bookingSource: 'Direct',
+        sourceType: '',
+        guestName: '',
+        guestContact: '',
+        guestDob: '',
+        guestCountry: 'India',
+        guestState: '',
+        guestCity: '',
+        email: '',
+        address: '',
+        idType: 'Aadhaar Card',
+        idNumber: '',
+        nationality: 'Indian',
+        companyName: '',
+        companyGst: '',
+        companyAddress: '',
+        arrivalTime: '12:00',
+        specialNote: '',
+        gender: ''
+      });
+      setPaymentDetails({
+        paymentMode: 'Prepaid',
+        paymentMethod: 'Cash',
+        amountPaid: 0,
+        paymentReference: '',
+        internalNotes: '',
+        status: 'pending'
+      });
+    } else {
+      setShowModal(false);
+    }
+  }, [initialOpenModal]);
   const [expandedGroups, setExpandedGroups] = useState([]);
   
   const [bookingToDelete, setBookingToDelete] = useState(null);
@@ -856,6 +899,9 @@ const BookingEngine = () => {
     setDiscountInput('');
     setTotalDiscount(0);
     setCurrentBookingId('');
+    if (onCloseModal) {
+      onCloseModal();
+    }
   };
 
   if (isLoading) return <div className="text-white">Loading Booking Engine...</div>;

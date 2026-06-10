@@ -13,6 +13,28 @@ const AdminDashboard = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [propertySubTab, setPropertySubTab] = useState('general');
+  const [bookingOpenModal, setBookingOpenModal] = useState(false);
+  const [staffOpenModal, setStaffOpenModal] = useState(false);
+
+  const handleNavigate = (tab, options = {}) => {
+    setActiveTab(tab);
+    if (tab === 'property') {
+      setPropertySubTab(options.subTab || 'general');
+    } else {
+      setPropertySubTab('general');
+    }
+    if (tab === 'booking') {
+      setBookingOpenModal(options.openModal || false);
+    } else {
+      setBookingOpenModal(false);
+    }
+    if (tab === 'staff') {
+      setStaffOpenModal(options.openModal || false);
+    } else {
+      setStaffOpenModal(false);
+    }
+  };
 
   // Auto-collapse sidebar on smaller screens on mount/resize
   useEffect(() => {
@@ -47,11 +69,21 @@ const AdminDashboard = () => {
 
   const renderContent = () => {
     switch (activeTab) {
-      case 'overview': return <AdminOverview />;
-      case 'property': return <PropertySettings />;
-      case 'staff': return <StaffManagement />;
+      case 'overview': return <AdminOverview onNavigate={handleNavigate} />;
+      case 'property': return <PropertySettings initialSubTab={propertySubTab} />;
+      case 'staff': return (
+        <StaffManagement 
+          initialOpenModal={staffOpenModal} 
+          onCloseModal={() => setStaffOpenModal(false)} 
+        />
+      );
       case 'rooms': return <RoomsInventory />;
-      case 'booking': return <BookingEngine />;
+      case 'booking': return (
+        <BookingEngine 
+          initialOpenModal={bookingOpenModal} 
+          onCloseModal={() => setBookingOpenModal(false)} 
+        />
+      );
       // other phases will be added here
       default: return (
         <div className="flex items-center justify-center h-full text-slate-500">
@@ -124,6 +156,9 @@ const AdminDashboard = () => {
               key={item.id}
               onClick={() => {
                 setActiveTab(item.id);
+                setPropertySubTab('general');
+                setBookingOpenModal(false);
+                setStaffOpenModal(false);
                 // Auto close sidebar on mobile/tablet after selection
                 if (window.innerWidth < 1024) {
                   setIsSidebarOpen(false);

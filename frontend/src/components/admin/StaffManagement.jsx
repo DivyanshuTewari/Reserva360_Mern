@@ -3,12 +3,16 @@ import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import { Users, Plus, Shield, Mail, KeyRound, Trash2, X } from 'lucide-react';
 
-const StaffManagement = () => {
+const StaffManagement = ({ initialOpenModal = false, onCloseModal }) => {
   const [staffList, setStaffList] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
+  const [showModal, setShowModal] = useState(initialOpenModal);
   const [newStaff, setNewStaff] = useState({ name: '', email: '', password: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    setShowModal(initialOpenModal);
+  }, [initialOpenModal]);
 
   useEffect(() => {
     fetchStaff();
@@ -33,6 +37,7 @@ const StaffManagement = () => {
       setStaffList([...staffList, res.data]);
       toast.success('Staff account provisioned successfully');
       setShowModal(false);
+      if (onCloseModal) onCloseModal();
       setNewStaff({ name: '', email: '', password: '' });
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to create staff account');
@@ -153,9 +158,9 @@ const StaffManagement = () => {
       {/* Provision Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowModal(false)}></div>
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => { setShowModal(false); if (onCloseModal) onCloseModal(); }}></div>
           <div className="relative bg-[#13151a] border border-white/10 rounded-2xl p-8 max-w-md w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-            <button onClick={() => setShowModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors">
+            <button onClick={() => { setShowModal(false); if (onCloseModal) onCloseModal(); }} className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors">
               <X size={24} />
             </button>
             
