@@ -915,6 +915,7 @@ const BookingDetailsDrawer = ({ bookingId, onClose, onRefresh }) => {
 
   const b = data?.booking;
   const s = data?.services || [];
+  const posOrders = data?.posOrders || [];
 
   const getStatusBadge = (status) => {
     const st = status?.toLowerCase() || '';
@@ -968,7 +969,7 @@ const BookingDetailsDrawer = ({ bookingId, onClose, onRefresh }) => {
     : 0;
 
   const extraServicesTotal = s.reduce((sum, item) => sum + (Number(item.grandTotal || item.amount) || 0), 0);
-  const posTotal = 0;
+  const posTotal = posOrders.reduce((sum, item) => sum + (Number(item.totalAmount) || 0), 0);
   const refundTotal = 0;
   
   const shortBookingId = b?._id?.toString()?.slice(-6)?.toUpperCase() || 'N/A';
@@ -1441,7 +1442,69 @@ const BookingDetailsDrawer = ({ bookingId, onClose, onRefresh }) => {
                 </div>
               </Accordion>
 
-              <Accordion title="3. Payments Folio" defaultOpen={true}>
+              <Accordion title="3. POS Orders" defaultOpen={true}>
+                <div className="bg-white border border-slate-300 rounded overflow-hidden shadow-sm flex flex-col justify-between font-sans">
+                  <div>
+                    <div className="bg-slate-50 border-b border-slate-200 px-4 py-2 text-center font-bold text-slate-700 text-xs uppercase tracking-wider">
+                      Charged POS Orders
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs text-left border-collapse">
+                        <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider text-[10px] font-bold">
+                          <tr>
+                            <th className="p-3 w-8 text-center">#</th>
+                            <th className="p-3">Order No</th>
+                            <th className="p-3">Outlet</th>
+                            <th className="p-3">Date</th>
+                            <th className="p-3">Items Purchased</th>
+                            <th className="p-3 text-right">Subtotal</th>
+                            <th className="p-3 text-right">Tax (GST)</th>
+                            <th className="p-3 text-right">Discount</th>
+                            <th className="p-3 text-right">Grand Total</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 font-medium">
+                          {posOrders.length === 0 ? (
+                            <tr>
+                              <td colSpan="9" className="p-8 text-center text-slate-400 italic">
+                                No POS orders charged to this room yet.
+                              </td>
+                            </tr>
+                          ) : (
+                            posOrders.map((order, idx) => {
+                              const dateFormatted = order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-GB') : '-';
+                              const itemsText = order.items.map(it => `${it.name} (x${it.quantity})`).join(', ');
+                              return (
+                                <tr key={order._id || idx} className="hover:bg-slate-50 transition-colors bg-white">
+                                  <td className="p-3 text-center text-slate-400">{idx + 1}</td>
+                                  <td className="p-3 text-slate-800 font-bold">{order.orderNumber}</td>
+                                  <td className="p-3 text-slate-700 font-semibold">{order.posOutletId?.name || 'N/A'}</td>
+                                  <td className="p-3 text-slate-500 whitespace-nowrap">{dateFormatted}</td>
+                                  <td className="p-3 text-slate-600 max-w-[200px] truncate" title={itemsText}>{itemsText}</td>
+                                  <td className="p-3 text-right text-slate-600 font-bold">₹{order.subtotal.toFixed(2)}</td>
+                                  <td className="p-3 text-right text-slate-600 font-bold">₹{order.taxTotal.toFixed(2)}</td>
+                                  <td className="p-3 text-right text-slate-600 font-bold">₹{order.discount.toFixed(2)}</td>
+                                  <td className="p-3 text-right text-slate-900 font-black">₹{order.totalAmount.toFixed(2)}</td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  
+                  {/* Bottom Summary Block */}
+                  <div className="bg-slate-50 border-t border-slate-200 p-3 flex justify-between items-center font-bold text-xs uppercase tracking-wider text-slate-700">
+                    <span>Total POS Orders Amount</span>
+                    <span className="text-sm font-black text-slate-900">
+                      {formatCurrency(posTotal)}
+                    </span>
+                  </div>
+                </div>
+              </Accordion>
+
+              <Accordion title="4. Payments Folio" defaultOpen={true}>
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 font-sans">
                   
                   {/* Left Column - Add Payment Folio Form */}
@@ -1618,7 +1681,7 @@ const BookingDetailsDrawer = ({ bookingId, onClose, onRefresh }) => {
               </Accordion>
 
               <Accordion 
-                title="4. Check Out Created" 
+                title="5. Check Out Created" 
                 defaultOpen={b?.status === 'checked-out'}
                 badge={data?.checkOutDetails ? <CheckCircle size={14} className="text-purple-500"/> : null}
               >

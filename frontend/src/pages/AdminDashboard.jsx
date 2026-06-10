@@ -7,6 +7,7 @@ import PropertySettings from '../components/admin/PropertySettings';
 import StaffManagement from '../components/admin/StaffManagement';
 import RoomsInventory from '../components/admin/RoomsInventory';
 import BookingEngine from '../components/admin/BookingEngine';
+import PosManagement from '../components/admin/PosManagement';
 
 const AdminDashboard = () => {
   const { user, logout } = useContext(AuthContext);
@@ -84,6 +85,7 @@ const AdminDashboard = () => {
           onCloseModal={() => setBookingOpenModal(false)} 
         />
       );
+      case 'pos': return <PosManagement />;
       // other phases will be added here
       default: return (
         <div className="flex items-center justify-center h-full text-slate-500">

@@ -40,4 +40,37 @@ router.delete('/room-blocks/:id', protect, authorize('admin'), deleteRoomBlock);
 router.get('/room-rack', protect, authorize('admin'), getRoomRack);
 router.get('/room-rack/search', protect, authorize('admin'), searchRackBookings);
 
+// POS & Billing routes
+const {
+  createOutlet, getOutlets, updateOutlet, deleteOutlet,
+  createItem, getItems, updateItem, deleteItem,
+  createOrder, getOrders, updateOrder, deleteOrder,
+  logWastage, getWastageLogs,
+  createTable, getTables, updateTable, deleteTable, transferTableOrder
+} = require('../controllers/posController');
+
+router.get('/pos/outlets', protect, authorize('admin'), getOutlets);
+router.post('/pos/outlets', protect, authorize('admin'), createOutlet);
+router.put('/pos/outlets/:id', protect, authorize('admin'), updateOutlet);
+router.delete('/pos/outlets/:id', protect, authorize('admin'), deleteOutlet);
+
+router.get('/pos/items', protect, authorize('admin'), getItems);
+router.post('/pos/items', protect, authorize('admin'), createItem);
+router.put('/pos/items/:id', protect, authorize('admin'), updateItem);
+router.delete('/pos/items/:id', protect, authorize('admin'), deleteItem);
+
+router.get('/pos/orders', protect, authorize('admin'), getOrders);
+router.post('/pos/orders', protect, authorize('admin'), createOrder);
+router.put('/pos/orders/:id', protect, authorize('admin'), updateOrder);
+router.delete('/pos/orders/:id', protect, authorize('admin'), deleteOrder);
+router.post('/pos/orders/:id/transfer-table', protect, authorize('admin'), transferTableOrder);
+
+router.get('/pos/tables', protect, authorize('admin'), getTables);
+router.post('/pos/tables', protect, authorize('admin'), createTable);
+router.put('/pos/tables/:id', protect, authorize('admin'), updateTable);
+router.delete('/pos/tables/:id', protect, authorize('admin'), deleteTable);
+
+router.get('/pos/wastage', protect, authorize('admin'), getWastageLogs);
+router.post('/pos/wastage', protect, authorize('admin'), logWastage);
+
 module.exports = router;

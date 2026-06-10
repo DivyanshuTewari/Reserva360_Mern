@@ -7,6 +7,7 @@ const Booking = require('../models/Booking');
 const RoomBlock = require('../models/RoomBlock');
 const ExtraService = require('../models/ExtraService');
 const Payment = require('../models/Payment');
+const PosOrder = require('../models/PosOrder');
 const bcrypt = require('bcrypt');
 
 // @desc    Get Hotel Profile
@@ -495,12 +496,15 @@ const recalculateGroupBookingTotals = async (bookingGroupId, hotelId) => {
   let groupPaidAmount = totalPayments;
 
   // 3. Evaluate totalAmount for each individual booking in the group
+  const posOrders = await PosOrder.find({ bookingId: { $in: bookingIds }, paymentMethod: 'room_charge', status: 'completed' });
   let updatedBookings = [];
   for (const b of bookings) {
     const bServices = services.filter(s => s.bookingId.toString() === b._id.toString());
     const bServicesTotal = bServices.reduce((sum, s) => sum + (s.grandTotal || 0), 0);
+    const bPosOrders = posOrders.filter(o => o.bookingId.toString() === b._id.toString());
+    const bPosTotal = bPosOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
     const baseAmount = (b.cost || 0) + (b.gst || 0) - (b.discount || 0);
-    const bTotalAmount = roundToTwo(baseAmount + bServicesTotal);
+    const bTotalAmount = roundToTwo(baseAmount + bServicesTotal + bPosTotal);
     updatedBookings.push({
       _id: b._id,
       totalAmount: bTotalAmount,
@@ -577,6 +581,9 @@ const recalculateBookingTotals = async (bookingId, hotelId) => {
     const services = await ExtraService.find({ bookingId });
     const servicesTotal = services.reduce((sum, s) => sum + (s.grandTotal || 0), 0);
 
+    const posOrders = await PosOrder.find({ bookingId, paymentMethod: 'room_charge', status: 'completed' });
+    const posTotal = posOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+
     const payments = await Payment.find({ bookingId });
     const totalPaid = roundToTwo(payments.reduce((sum, p) => {
       if (p.additionType === 'Refund') return sum - (p.amount || 0);
@@ -584,7 +591,7 @@ const recalculateBookingTotals = async (bookingId, hotelId) => {
     }, 0));
 
     const baseAmount = (booking.cost || 0) + (booking.gst || 0) - (booking.discount || 0);
-    const newTotal = roundToTwo(baseAmount + servicesTotal);
+    const newTotal = roundToTwo(baseAmount + servicesTotal + posTotal);
     const newPending = Math.max(0, roundToTwo(newTotal - totalPaid));
 
     let paymentStatus = 'pending';
@@ -854,11 +861,15 @@ exports.getBookingDetails = async (req, res) => {
     
     // Fetch all payments for the group (or single booking)
     const payments = await Payment.find({ bookingId: { $in: bookingIds } }).lean();
+
+    // Fetch all POS orders for the group (or single booking)
+    const posOrders = await PosOrder.find({ bookingId: { $in: bookingIds }, status: 'completed' }).populate('posOutletId', 'name').lean();
     
     res.json({ 
       booking, 
       payments, 
       services, 
+      posOrders,
       checkInDetails, 
       checkOutDetails,
       groupBookings,
@@ -1142,4 +1153,6 @@ exports.updateBookingGroup = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+exports.recalculateBookingTotals = recalculateBookingTotals;
 
